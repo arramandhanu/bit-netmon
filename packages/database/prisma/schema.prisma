@@ -1,0 +1,332 @@
+// ──────────────────────────────────────────────────────────
+// NetMon — Prisma Schema
+// ──────────────────────────────────────────────────────────
+// All models map to snake_case tables. Prisma fields use
+// camelCase for TypeScript ergonomics.
+//
+// TimescaleDB hypertables (interface_metrics, device_metrics,
+// wireless_metrics) are created via raw SQL in a separate
+// migration — Prisma does not manage them.
+// ──────────────────────────────────────────────────────────
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────
+
+enum DeviceType {
+  router
+  switch
+  access_point
+  firewall
+  server
+  unknown
+
+  @@map("device_type")
+}
+
+enum DeviceStatus {
+  up
+  down
+  warning
+  maintenance
+  unknown
+
+  @@map("device_status")
+}
+
+enum AlertSeverity {
+  info
+  warning
+  critical
+
+  @@map("alert_severity")
+}
+
+enum AlertState {
+  triggered
+  acknowledged
+  resolved
+
+  @@map("alert_state")
+}
+
+enum UserRole {
+  admin
+  operator
+  viewer
+
+  @@map("user_role")
+}
+
+// ─── Location ───────────────────────────────────────────
+
+model Location {
+  id        Int      @id @default(autoincrement()) @map("location_id")
+  name      String   @db.VarChar(255)
+  code      String   @unique @db.VarChar(50)
+  address   String?  @db.Text
+  city      String?  @db.VarChar(100)
+  province  String?  @db.VarChar(100)
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  devices Device[]
+
+  @@map("locations")
+}
+
+// ─── Device ─────────────────────────────────────────────
+
+model Device {
+  id               Int          @id @default(autoincrement()) @map("device_id")
+  hostname         String       @unique @db.VarChar(255)
+  ipAddress        String       @map("ip_address") @db.VarChar(45)
+  displayName      String?      @map("display_name") @db.VarChar(255)
+  deviceType       DeviceType   @default(unknown) @map("device_type")
+  vendor           String?      @db.VarChar(100)
+  model            String?      @db.VarChar(100)
+  osVersion        String?      @map("os_version") @db.VarChar(255)
+  serialNumber     String?      @map("serial_number") @db.VarChar(100)
+  sysObjectId      String?      @map("sys_object_id") @db.VarChar(255)
+  status           DeviceStatus @default(unknown)
+  uptime           BigInt?      @default(0)
+
+  // SNMP credentials (encrypted at rest)
+  snmpVersion      String       @default("v2c") @map("snmp_version") @db.VarChar(10)
+  snmpPort         Int          @default(161) @map("snmp_port")
+  snmpCommunity    String?      @map("snmp_community") @db.VarChar(512)
+  snmpV3User       String?      @map("snmp_v3_user") @db.VarChar(255)
+  snmpV3AuthProto  String?      @map("snmp_v3_auth_proto") @db.VarChar(10)
+  snmpV3AuthPass   String?      @map("snmp_v3_auth_pass") @db.VarChar(512)
+  snmpV3PrivProto  String?      @map("snmp_v3_priv_proto") @db.VarChar(10)
+  snmpV3PrivPass   String?      @map("snmp_v3_priv_pass") @db.VarChar(512)
+
+  // Polling
+  pollingEnabled   Boolean      @default(true) @map("polling_enabled")
+  pollingInterval  Int          @default(300) @map("polling_interval")
+  lastPolledAt     DateTime?    @map("last_polled_at")
+  lastDiscoveredAt DateTime?    @map("last_discovered_at")
+
+  // Relations
+  locationId       Int?         @map("location_id")
+  location         Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  interfaces       Interface[]
+  alertHistory     AlertHistory[]
+  groups           DeviceGroupMember[]
+  pollingJobs      PollingJob[]
+
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@index([locationId], map: "idx_devices_location")
+  @@index([status], map: "idx_devices_status")
+  @@index([deviceType], map: "idx_devices_type")
+  @@index([ipAddress], map: "idx_devices_ip")
+  @@map("devices")
+}
+
+// ─── Interface ──────────────────────────────────────────
+
+model Interface {
+  id               Int      @id @default(autoincrement()) @map("interface_id")
+  deviceId         Int      @map("device_id")
+  ifIndex          Int      @map("if_index")
+  ifName           String?  @map("if_name") @db.VarChar(255)
+  ifDescr          String?  @map("if_descr") @db.VarChar(255)
+  ifAlias          String?  @map("if_alias") @db.VarChar(255)
+  ifType           String?  @map("if_type") @db.VarChar(50)
+  ifSpeed          BigInt?  @default(0) @map("if_speed")
+  ifHighSpeed      BigInt?  @default(0) @map("if_high_speed")
+  ifPhysAddress    String?  @map("if_phys_address") @db.VarChar(50)
+  ifAdminStatus    String?  @default("up") @map("if_admin_status") @db.VarChar(20)
+  ifOperStatus     String?  @default("up") @map("if_oper_status") @db.VarChar(20)
+  pollingEnabled   Boolean  @default(true) @map("polling_enabled")
+
+  device           Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([deviceId, ifIndex], map: "uq_device_ifindex")
+  @@index([deviceId], map: "idx_interfaces_device")
+  @@index([ifOperStatus], map: "idx_interfaces_status")
+  @@map("interfaces")
+}
+
+// ─── Alert Rule ─────────────────────────────────────────
+
+model AlertRule {
+  id             Int           @id @default(autoincrement()) @map("rule_id")
+  name           String        @db.VarChar(255)
+  description    String?       @db.Text
+  metricName     String        @map("metric_name") @db.VarChar(100)
+  condition      String        @db.VarChar(10)
+  threshold      Float
+  duration       Int           @default(0)
+  severity       AlertSeverity @default(warning)
+  enabled        Boolean       @default(true)
+  notifyChannels String[]      @map("notify_channels")
+
+  deviceGroupId  Int?          @map("device_group_id")
+  deviceGroup    DeviceGroup?  @relation(fields: [deviceGroupId], references: [id], onDelete: SetNull)
+
+  alerts         AlertHistory[]
+
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  @@map("alert_rules")
+}
+
+// ─── Alert History ──────────────────────────────────────
+
+model AlertHistory {
+  id             Int           @id @default(autoincrement()) @map("alert_id")
+  deviceId       Int           @map("device_id")
+  ruleId         Int           @map("rule_id")
+  severity       AlertSeverity
+  state          AlertState    @default(triggered)
+  message        String        @db.Text
+  metricValue    Float?        @map("metric_value")
+  triggeredAt    DateTime      @default(now()) @map("triggered_at")
+  acknowledgedAt DateTime?     @map("acknowledged_at")
+  acknowledgedBy Int?          @map("acknowledged_by")
+  resolvedAt     DateTime?     @map("resolved_at")
+
+  device         Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  rule           AlertRule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, triggeredAt], map: "idx_alerts_device_time")
+  @@index([state], map: "idx_alerts_state")
+  @@index([severity], map: "idx_alerts_severity")
+  @@map("alert_history")
+}
+
+// ─── Device Group ───────────────────────────────────────
+
+model DeviceGroup {
+  id          Int                 @id @default(autoincrement()) @map("group_id")
+  name        String              @unique @db.VarChar(255)
+  description String?             @db.Text
+  members     DeviceGroupMember[]
+  alertRules  AlertRule[]
+
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@map("device_groups")
+}
+
+model DeviceGroupMember {
+  groupId  Int         @map("group_id")
+  deviceId Int         @map("device_id")
+  group    DeviceGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  device   Device      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, deviceId])
+  @@map("device_group_members")
+}
+
+// ─── Polling Job ────────────────────────────────────────
+
+model PollingJob {
+  id          Int      @id @default(autoincrement()) @map("job_id")
+  deviceId    Int      @map("device_id")
+  jobType     String   @map("job_type") @db.VarChar(50)
+  status      String   @default("pending") @db.VarChar(20)
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  duration    Int?
+  error       String?  @db.Text
+
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId, createdAt], map: "idx_polling_jobs_device")
+  @@map("polling_jobs")
+}
+
+// ─── User ───────────────────────────────────────────────
+
+model User {
+  id           Int      @id @default(autoincrement()) @map("user_id")
+  username     String   @unique @db.VarChar(100)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  displayName  String?  @map("display_name") @db.VarChar(255)
+  role         UserRole @default(viewer)
+  isActive     Boolean  @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  totpSecret   String?  @map("totp_secret") @db.VarChar(255)
+  totpEnabled  Boolean  @default(false) @map("totp_enabled")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  auditLogs    AuditLog[]
+  apiKeys      ApiKey[]
+
+  @@map("users")
+}
+
+// ─── Audit Log ──────────────────────────────────────────
+
+model AuditLog {
+  id        Int      @id @default(autoincrement()) @map("log_id")
+  userId    Int?     @map("user_id")
+  action    String   @db.VarChar(100)
+  entity    String   @db.VarChar(100)
+  entityId  Int?     @map("entity_id")
+  details   Json?
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt], map: "idx_audit_user")
+  @@index([entity, entityId], map: "idx_audit_entity")
+  @@map("audit_logs")
+}
+
+// ─── System Settings ────────────────────────────────────
+
+model SystemSetting {
+  key       String   @id @db.VarChar(100)
+  value     String   @db.Text
+  category  String   @db.VarChar(50)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([category], map: "idx_settings_category")
+  @@map("system_settings")
+}
+
+// ─── API Keys ───────────────────────────────────────────
+
+model ApiKey {
+  id        Int       @id @default(autoincrement()) @map("api_key_id")
+  userId    Int       @map("user_id")
+  name      String    @db.VarChar(100)
+  keyHash   String    @map("key_hash") @db.VarChar(255)
+  prefix    String    @db.VarChar(12)
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt DateTime?  @map("expires_at")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([prefix], map: "idx_api_keys_prefix")
+  @@index([userId], map: "idx_api_keys_user")
+  @@map("api_keys")
+}

@@ -1,0 +1,10 @@
+FROM node:20-alpine
+WORKDIR /app
+
+COPY apps/bull-board/package.json ./
+RUN npm install --production
+
+COPY apps/bull-board/ ./
+
+EXPOSE 3002
+CMD ["node", "server.js"]

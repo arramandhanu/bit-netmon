@@ -1,0 +1,16 @@
+{
+    "name": "@netmon/bull-board",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev": "node server.js",
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "@bull-board/api": "^5.21.0",
+        "@bull-board/express": "^5.21.0",
+        "bullmq": "^5.25.0",
+        "express": "^4.21.0",
+        "ioredis": "^5.4.0"
+    }
+}

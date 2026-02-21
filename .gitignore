@@ -1,0 +1,44 @@
+# ─── Dependencies ─────────────────────────────────
+node_modules/
+
+# ─── Build outputs ────────────────────────────────
+dist/
+.next/
+*.tsbuildinfo
+
+# ─── Turbo ────────────────────────────────────────
+.turbo/
+
+# ─── Environment variables ────────────────────────
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ─── Database ─────────────────────────────────────
+.prisma/
+
+# ─── Docs (internal / private planning docs) ──────
+docs/
+
+# ─── Test & Coverage ─────────────────────────────
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# ─── Logs ─────────────────────────────────────────
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ─── OS files ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── IDE / Editor ─────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
