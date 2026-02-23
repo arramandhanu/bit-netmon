@@ -23,6 +23,7 @@ export class LocationsService {
                 { name: { contains: search, mode: 'insensitive' } },
                 { code: { contains: search, mode: 'insensitive' } },
                 { address: { contains: search, mode: 'insensitive' } },
+                { city: { contains: search, mode: 'insensitive' } },
             ];
         }
 
@@ -34,19 +35,32 @@ export class LocationsService {
                 orderBy: { code: 'asc' },
                 include: {
                     _count: { select: { devices: true } },
+                    devices: {
+                        select: { id: true, status: true, hostname: true },
+                    },
                 },
             }),
             this.prisma.location.count({ where }),
         ]);
 
+        // Compute status summary per location
+        const enriched = items.map((loc: any) => {
+            const statusSummary: Record<string, number> = {};
+            (loc.devices || []).forEach((d: any) => {
+                statusSummary[d.status] = (statusSummary[d.status] || 0) + 1;
+            });
+            return { ...loc, statusSummary };
+        });
+
         return {
-            items,
+            items: enriched,
             total,
             page,
             limit,
             pages: Math.ceil(total / limit),
         };
     }
+
 
     async findOne(id: number) {
         const location = await this.prisma.location.findUnique({

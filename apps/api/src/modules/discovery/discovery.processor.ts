@@ -171,6 +171,9 @@ export class DiscoveryProcessor extends WorkerHost {
                     status: 'up',
                     sysObjectId: sysInfo.sysObjectID,
                     deviceType: classification.deviceType as any,
+                    vendor: classification.vendor || existing.vendor,
+                    model: classification.model || existing.model,
+                    osVersion: this.extractOsVersion(sysInfo.sysDescr) || existing.osVersion,
                     lastDiscoveredAt: new Date(),
                 },
             });
@@ -187,6 +190,9 @@ export class DiscoveryProcessor extends WorkerHost {
                 ipAddress: ip,
                 displayName: `${classification.vendor} ${classification.model}`.trim().substring(0, 255),
                 deviceType: classification.deviceType as any,
+                vendor: classification.vendor,
+                model: classification.model,
+                osVersion: this.extractOsVersion(sysInfo.sysDescr),
                 status: 'up',
                 snmpVersion: 'v2c',
                 snmpCommunity: encryptedCommunity,
@@ -206,15 +212,35 @@ export class DiscoveryProcessor extends WorkerHost {
         return true;
     }
 
+    private isVirtualInterface(name: string): boolean {
+        if (!name) return false;
+        const lower = name.toLowerCase();
+        return lower === 'lo'
+            || lower.startsWith('pppoe-')
+            || lower.startsWith('<pppoe-')
+            || lower.startsWith('pptp-')
+            || lower.startsWith('l2tp-')
+            || lower.startsWith('sstp-')
+            || lower.startsWith('ovpn-')
+            || lower.startsWith('gre-')
+            || lower.startsWith('ipip-')
+            || lower.startsWith('eoip-')
+            || /^(Null|unrouted|sit\d)/i.test(name);
+    }
+
     private async upsertInterfaces(deviceId: number, interfaces: any[]) {
         for (const iface of interfaces) {
+            const ifName = iface.ifName || iface.ifDescr || '';
+            // Skip virtual/PPPoE/tunnel interfaces
+            if (this.isVirtualInterface(ifName)) continue;
+
             await this.prisma.interface.upsert({
                 where: {
                     deviceId_ifIndex: { deviceId, ifIndex: iface.ifIndex },
                 },
                 update: {
                     ifDescr: iface.ifDescr || '',
-                    ifName: iface.ifName || iface.ifDescr || '',
+                    ifName: ifName || '',
                     ifAlias: iface.ifAlias || '',
                     ifType: String(iface.ifType || ''),
                     ifSpeed: BigInt(iface.ifHighSpeed ? iface.ifHighSpeed * 1_000_000 : iface.ifSpeed || 0),
@@ -226,13 +252,14 @@ export class DiscoveryProcessor extends WorkerHost {
                     deviceId,
                     ifIndex: iface.ifIndex,
                     ifDescr: iface.ifDescr || '',
-                    ifName: iface.ifName || iface.ifDescr || '',
+                    ifName: ifName || '',
                     ifAlias: iface.ifAlias || '',
                     ifType: String(iface.ifType || ''),
                     ifSpeed: BigInt(iface.ifHighSpeed ? iface.ifHighSpeed * 1_000_000 : iface.ifSpeed || 0),
                     ifPhysAddress: iface.ifPhysAddress || '',
                     ifAdminStatus: iface.ifAdminStatus === 1 ? 'up' : 'down',
                     ifOperStatus: iface.ifOperStatus === 1 ? 'up' : 'down',
+                    pollingEnabled: false,
                 },
             });
         }
@@ -241,6 +268,34 @@ export class DiscoveryProcessor extends WorkerHost {
     /**
      * Ensure hostname is unique by appending IP if needed
      */
+    /**
+     * Extract OS version from sysDescr string.
+     * Handles MikroTik: "RouterOS 7.14.3 (stable)"
+     * Handles Cisco: "Cisco IOS Software, ...Version 15.2(7)E7"
+     * Handles Linux: "Linux hostname 5.15.0-91-generic ..."
+     */
+    private extractOsVersion(sysDescr: string): string {
+        if (!sysDescr) return '';
+
+        // MikroTik: "RouterOS RBxxx" or "RouterOS 7.14.3 (stable) on RB..."
+        const mtMatch = sysDescr.match(/RouterOS\s+([\d.]+)/i);
+        if (mtMatch) return `RouterOS ${mtMatch[1]}`;
+
+        // Cisco IOS: "Version X.Y(...)"
+        const iosMatch = sysDescr.match(/Version\s+([\d.()A-Za-z]+)/i);
+        if (iosMatch) return iosMatch[1];
+
+        // Linux kernel: "Linux hostname X.Y.Z"
+        const linuxMatch = sysDescr.match(/Linux\s+\S+\s+([\d.\-a-z]+)/i);
+        if (linuxMatch) return `Linux ${linuxMatch[1]}`;
+
+        // FreeBSD
+        const bsdMatch = sysDescr.match(/(FreeBSD|OpenBSD)\s+\S+\s+([\d.\-]+)/i);
+        if (bsdMatch) return `${bsdMatch[1]} ${bsdMatch[2]}`;
+
+        return sysDescr.split('\n')[0].substring(0, 100);
+    }
+
     private sanitizeHostname(hostname: string, ip: string): string {
         // Remove invalid chars, trim
         const clean = hostname.replace(/[^a-zA-Z0-9._-]/g, '-').substring(0, 200);

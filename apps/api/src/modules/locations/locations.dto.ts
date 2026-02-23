@@ -18,6 +18,16 @@ export class CreateLocationDto {
     @IsOptional()
     address?: string;
 
+    @ApiPropertyOptional({ example: 'Jakarta' })
+    @IsString()
+    @IsOptional()
+    city?: string;
+
+    @ApiPropertyOptional({ example: 'DKI Jakarta' })
+    @IsString()
+    @IsOptional()
+    province?: string;
+
     @ApiPropertyOptional({ example: -6.2088 })
     @IsOptional()
     @Type(() => Number)
@@ -44,6 +54,16 @@ export class UpdateLocationDto {
     @IsString()
     @IsOptional()
     address?: string;
+
+    @ApiPropertyOptional()
+    @IsString()
+    @IsOptional()
+    city?: string;
+
+    @ApiPropertyOptional()
+    @IsString()
+    @IsOptional()
+    province?: string;
 
     @ApiPropertyOptional()
     @IsOptional()

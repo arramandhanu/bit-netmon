@@ -318,34 +318,47 @@ export class SnmpService {
      * Parse varbind value based on ObjectType
      */
     private parseVarbindValue(vb: any): any {
-        if (vb.type === snmp.ObjectType.OctetString) {
-            // Try to interpret as UTF-8 string; fall back to hex for MACs
-            const buf = vb.value;
-            if (Buffer.isBuffer(buf)) {
-                // Check if it looks like a MAC address (6 bytes)
-                if (buf.length === 6) {
-                    return Array.from(buf as Uint8Array)
-                        .map((b) => b.toString(16).padStart(2, '0'))
-                        .join(':');
+        try {
+            if (vb.type === snmp.ObjectType.OctetString) {
+                // Try to interpret as UTF-8 string; fall back to hex for MACs
+                const buf = vb.value;
+                if (Buffer.isBuffer(buf)) {
+                    // Check if it looks like a MAC address (6 bytes)
+                    if (buf.length === 6) {
+                        return Array.from(buf as Uint8Array)
+                            .map((b) => b.toString(16).padStart(2, '0'))
+                            .join(':');
+                    }
+                    return buf.toString('utf8').replace(/\0/g, '');
                 }
-                return buf.toString('utf8').replace(/\0/g, '');
+                return String(vb.value);
             }
-            return String(vb.value);
-        }
 
-        if (vb.type === snmp.ObjectType.OID) {
-            return String(vb.value);
-        }
-
-        if (vb.type === snmp.ObjectType.Counter64) {
-            // net-snmp returns Counter64 as a Buffer — convert to number
-            const buf = vb.value;
-            if (Buffer.isBuffer(buf)) {
-                return buf.readBigUInt64BE ? Number(buf.readBigUInt64BE(0)) : 0;
+            if (vb.type === snmp.ObjectType.OID) {
+                return String(vb.value);
             }
-            return Number(vb.value);
-        }
 
-        return Number(vb.value) || vb.value;
+            if (vb.type === snmp.ObjectType.Counter64) {
+                // net-snmp returns Counter64 as a Buffer — convert to number
+                // MikroTik and some devices may return fewer than 8 bytes;
+                // pad to 8 bytes to avoid ERR_BUFFER_OUT_OF_BOUNDS
+                const buf = vb.value;
+                if (Buffer.isBuffer(buf)) {
+                    if (buf.length >= 8) {
+                        return Number(buf.readBigUInt64BE(0));
+                    }
+                    // Pad smaller buffers to 8 bytes (left-pad with zeros)
+                    const padded = Buffer.alloc(8, 0);
+                    buf.copy(padded, 8 - buf.length);
+                    return Number(padded.readBigUInt64BE(0));
+                }
+                return Number(vb.value) || 0;
+            }
+
+            return Number(vb.value) || vb.value;
+        } catch (err) {
+            this.logger.warn(`Failed to parse varbind (type=${vb.type}): ${err}`);
+            return 0;
+        }
     }
 }

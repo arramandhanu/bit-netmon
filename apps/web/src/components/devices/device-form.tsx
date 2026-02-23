@@ -115,6 +115,9 @@ export function DeviceForm({
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<any>(null);
 
+    // Inline validation errors
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
     // Refs for scroll-to-section
     const sectionRefs: Record<string, React.RefObject<HTMLDivElement | null>> = {
         general: useRef<HTMLDivElement>(null),
@@ -124,6 +127,68 @@ export function DeviceForm({
 
     const update = (field: keyof DeviceFormData, value: any) => {
         setFormData((prev) => ({ ...prev, [field]: value }));
+        // Clear the error for this field on change
+        if (fieldErrors[field]) {
+            setFieldErrors((prev) => { const next = { ...prev }; delete next[field]; return next; });
+        }
+    };
+
+    /** Returns true if valid, false if there are errors. Populates fieldErrors. */
+    const validate = (): boolean => {
+        const errs: Record<string, string> = {};
+        const hostname = formData.hostname.trim();
+        if (!hostname) {
+            errs.hostname = 'Hostname is required.';
+        } else if (/\s/.test(hostname)) {
+            errs.hostname = 'Hostname must not contain spaces.';
+        }
+
+        const ip = formData.ipAddress.trim();
+        if (!ip) {
+            errs.ipAddress = 'IP Address is required.';
+        } else {
+            // Accept IPv4, IPv6, or FQDN hostname
+            const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
+            const ipv6 = /^[0-9a-fA-F:]+$/.test(ip) && ip.includes(':');
+            const fqdn = /^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$/.test(ip);
+            if (!ipv4 && !ipv6 && !fqdn) {
+                errs.ipAddress = 'Enter a valid IPv4, IPv6, or hostname.';
+            }
+        }
+
+        const port = parseInt(formData.snmpPort);
+        if (isNaN(port) || port < 1 || port > 65535) {
+            errs.snmpPort = 'Port must be between 1 and 65535.';
+        }
+
+        const interval = parseInt(formData.pollingInterval);
+        if (isNaN(interval) || interval < 10) {
+            errs.pollingInterval = 'Polling interval must be at least 10 seconds.';
+        }
+
+        if (formData.snmpVersion === 'v3' && !formData.snmpV3User.trim()) {
+            errs.snmpV3User = 'Security user is required for SNMPv3.';
+        }
+
+        setFieldErrors(errs);
+        return Object.keys(errs).length === 0;
+    };
+
+    const handleValidatedSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!validate()) {
+            // Scroll to the first errored section
+            const errorFields = Object.keys(fieldErrors.length ? fieldErrors : {});
+            if (errorFields.some(f => ['hostname', 'ipAddress', 'displayName', 'deviceType'].includes(f))) {
+                scrollToSection('general');
+            } else if (errorFields.some(f => ['snmpPort', 'snmpV3User'].includes(f))) {
+                scrollToSection('snmp');
+            } else {
+                scrollToSection('polling');
+            }
+            return;
+        }
+        onSubmit(e);
     };
 
     const scrollToSection = (id: string) => {
@@ -179,8 +244,14 @@ export function DeviceForm({
         }
     };
 
-    const inputClass = 'w-full h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all placeholder:text-gray-400';
-    const selectClass = 'w-full h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all appearance-none cursor-pointer';
+    const inputBase = 'w-full h-10 rounded-lg bg-white px-3 text-sm outline-none transition-all placeholder:text-gray-400 border focus:ring-1';
+    const inputClass = `${inputBase} border-gray-200 focus:border-blue-400 focus:ring-blue-400`;
+    const getInputClass = (field: string) =>
+        `${inputBase} ${fieldErrors[field] ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-gray-200 focus:border-blue-400 focus:ring-blue-400'}`;
+    const selectBase = 'w-full h-10 rounded-lg bg-white px-3 text-sm outline-none transition-all appearance-none cursor-pointer border focus:ring-1';
+    const selectClass = `${selectBase} border-gray-200 focus:border-blue-400 focus:ring-blue-400`;
+    const getSelectClass = (field: string) =>
+        `${selectBase} ${fieldErrors[field] ? 'border-red-400 focus:border-red-400 focus:ring-red-400' : 'border-gray-200 focus:border-blue-400 focus:ring-blue-400'}`;
 
     return (
         <div className="space-y-6">
@@ -213,7 +284,7 @@ export function DeviceForm({
                         Cancel
                     </Link>
                     <button
-                        onClick={onSubmit as any}
+                        onClick={handleValidatedSubmit as any}
                         disabled={saving}
                         className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2 disabled:opacity-60"
                     >
@@ -240,7 +311,7 @@ export function DeviceForm({
             )}
 
             {/* Sidebar + Content */}
-            <form onSubmit={onSubmit} className="flex flex-col lg:flex-row gap-6 items-start">
+            <form onSubmit={handleValidatedSubmit} className="flex flex-col lg:flex-row gap-6 items-start">
                 {/* Left Sidebar */}
                 <aside className="w-full lg:w-56 flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:sticky lg:top-24">
                     <nav className="flex flex-col py-2">
@@ -253,8 +324,8 @@ export function DeviceForm({
                                     type="button"
                                     onClick={() => scrollToSection(s.id)}
                                     className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left ${isActive
-                                            ? 'bg-blue-50 text-blue-600 border-r-[3px] border-blue-500'
-                                            : 'text-gray-600 hover:bg-gray-50 border-r-[3px] border-transparent'
+                                        ? 'bg-blue-50 text-blue-600 border-r-[3px] border-blue-500'
+                                        : 'text-gray-600 hover:bg-gray-50 border-r-[3px] border-transparent'
                                         }`}
                                 >
                                     <Icon className="h-4 w-4" />
@@ -294,9 +365,9 @@ export function DeviceForm({
                                     value={formData.hostname}
                                     onChange={(e) => update('hostname', e.target.value)}
                                     placeholder="e.g. router-hq-01"
-                                    required
-                                    className={inputClass}
+                                    className={getInputClass('hostname')}
                                 />
+                                {fieldErrors.hostname && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><span>⚠</span>{fieldErrors.hostname}</p>}
                             </div>
                             <div className="space-y-1">
                                 <label className="block text-sm font-medium text-gray-700">IP Address <span className="text-red-500">*</span></label>
@@ -305,9 +376,9 @@ export function DeviceForm({
                                     value={formData.ipAddress}
                                     onChange={(e) => update('ipAddress', e.target.value)}
                                     placeholder="e.g. 10.0.1.1"
-                                    required
-                                    className={inputClass}
+                                    className={getInputClass('ipAddress')}
                                 />
+                                {fieldErrors.ipAddress && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><span>⚠</span>{fieldErrors.ipAddress}</p>}
                             </div>
                             <div className="space-y-1">
                                 <label className="block text-sm font-medium text-gray-700">Display Name</label>
@@ -381,8 +452,9 @@ export function DeviceForm({
                                     value={formData.snmpPort}
                                     onChange={(e) => update('snmpPort', e.target.value)}
                                     placeholder="161"
-                                    className={inputClass}
+                                    className={getInputClass('snmpPort')}
                                 />
+                                {fieldErrors.snmpPort && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><span>⚠</span>{fieldErrors.snmpPort}</p>}
                             </div>
                         </div>
 
@@ -396,8 +468,9 @@ export function DeviceForm({
                                     </h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-1">
-                                            <label className="block text-sm font-medium text-gray-700">Security User</label>
-                                            <input type="text" value={formData.snmpV3User} onChange={(e) => update('snmpV3User', e.target.value)} placeholder="snmp-user" className={inputClass} />
+                                            <label className="block text-sm font-medium text-gray-700">Security User <span className="text-red-500">*</span></label>
+                                            <input type="text" value={formData.snmpV3User} onChange={(e) => update('snmpV3User', e.target.value)} placeholder="snmp-user" className={getInputClass('snmpV3User')} />
+                                            {fieldErrors.snmpV3User && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><span>⚠</span>{fieldErrors.snmpV3User}</p>}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="block text-sm font-medium text-gray-700">Auth Protocol</label>
@@ -533,11 +606,14 @@ export function DeviceForm({
                                         type="number"
                                         value={formData.pollingInterval}
                                         onChange={(e) => update('pollingInterval', e.target.value)}
-                                        className={`${inputClass} pr-12`}
+                                        className={`${getInputClass('pollingInterval')} pr-12`}
                                     />
                                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-medium">SEC</span>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">Recommended: 60s for critical core devices.</p>
+                                {fieldErrors.pollingInterval
+                                    ? <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><span>⚠</span>{fieldErrors.pollingInterval}</p>
+                                    : <p className="text-xs text-gray-500 mt-1">Recommended: 60s for critical core devices.</p>
+                                }
                             </div>
                             <div className="space-y-3">
                                 <label className="block text-sm font-medium text-gray-700">Status</label>

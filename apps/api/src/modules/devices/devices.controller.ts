@@ -16,7 +16,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, RequirePermission } from '../../common/guards/roles.guard';
 import { DevicesService } from './devices.service';
-import { CreateDeviceDto, UpdateDeviceDto, DeviceQueryDto, BulkDeleteDeviceDto, TestSnmpDto } from './devices.dto';
+import { CreateDeviceDto, UpdateDeviceDto, DeviceQueryDto, BulkDeleteDeviceDto, BulkUpdateDeviceDto, TestSnmpDto } from './devices.dto';
 
 @ApiTags('Devices')
 @ApiBearerAuth()
@@ -61,6 +61,13 @@ export class DevicesController {
         return this.devicesService.bulkRemove(dto.ids);
     }
 
+    @Patch('bulk-update')
+    @RequirePermission('devices:write')
+    @ApiOperation({ summary: 'Bulk update devices by IDs' })
+    bulkUpdate(@Body() dto: BulkUpdateDeviceDto) {
+        return this.devicesService.bulkUpdate(dto.ids, dto.data);
+    }
+
     @Patch(':id')
     @RequirePermission('devices:write')
     @ApiOperation({ summary: 'Update a device' })
@@ -76,5 +83,24 @@ export class DevicesController {
     @ApiOperation({ summary: 'Delete a device' })
     remove(@Param('id', ParseIntPipe) id: number) {
         return this.devicesService.remove(id);
+    }
+
+    // ─── Maintenance Windows ────────────────────────────
+
+    @Post(':id/maintenance')
+    @RequirePermission('devices:write')
+    @ApiOperation({ summary: 'Put a device into maintenance mode' })
+    startMaintenance(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: { reason?: string; endsAt?: string },
+    ) {
+        return this.devicesService.startMaintenance(id, body.reason, body.endsAt ? new Date(body.endsAt) : undefined);
+    }
+
+    @Delete(':id/maintenance')
+    @RequirePermission('devices:write')
+    @ApiOperation({ summary: 'End maintenance mode for a device' })
+    endMaintenance(@Param('id', ParseIntPipe) id: number) {
+        return this.devicesService.endMaintenance(id);
     }
 }

@@ -4,6 +4,7 @@ import { Job } from 'bullmq';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { SnmpService, SnmpTarget } from '../snmp/snmp.service';
+import { DeviceClassifierService } from '../snmp/device-classifier.service';
 import { AlertEvaluatorService } from '../alerting/alert-evaluator.service';
 import { MetricsGateway } from '../metrics/metrics.gateway';
 import {
@@ -27,6 +28,7 @@ export class PollingProcessor extends WorkerHost {
         private readonly prisma: PrismaService,
         private readonly encryption: EncryptionService,
         private readonly snmp: SnmpService,
+        private readonly classifier: DeviceClassifierService,
         private readonly alertEvaluator: AlertEvaluatorService,
         private readonly metricsGateway: MetricsGateway,
     ) {
@@ -78,20 +80,30 @@ export class PollingProcessor extends WorkerHost {
                 memoryUsed: deviceMetrics.memoryUsed,
                 memoryTotal: deviceMetrics.memoryTotal,
                 memoryPercent: deviceMetrics.memoryPercent,
-                uptime: sysInfo.sysUpTime,
+                uptime: Math.floor(sysInfo.sysUpTime / 100),
                 responseTimeMs: responseTime,
             });
 
             // 5. Auto-discover interfaces via SNMP and write metrics
             await this.discoverAndPollInterfaces(target, device);
 
-            // 6. Update device status
+            // 6. Classify device and update vendor/model/OS if missing
+            const classification = this.classifier.classify(
+                sysInfo.sysObjectID || device.sysObjectId || '',
+                sysInfo.sysDescr || '',
+            );
+
             await this.prisma.device.update({
                 where: { id: device.id },
                 data: {
                     status: 'up',
-                    uptime: BigInt(sysInfo.sysUpTime),
+                    uptime: BigInt(Math.floor(sysInfo.sysUpTime / 100)),
                     lastPolledAt: new Date(),
+                    // Only update vendor/model/OS if currently missing
+                    ...(!device.vendor && classification.vendor !== 'Unknown' ? { vendor: classification.vendor } : {}),
+                    ...(!device.model ? { model: classification.model } : {}),
+                    ...(!device.osVersion ? { osVersion: this.extractOsVersion(sysInfo.sysDescr) } : {}),
+                    ...(!device.sysObjectId && sysInfo.sysObjectID ? { sysObjectId: sysInfo.sysObjectID } : {}),
                 },
             });
 
@@ -231,12 +243,45 @@ export class PollingProcessor extends WorkerHost {
      * Discover interfaces via SNMP, upsert into DB, and poll traffic metrics.
      * This replaces the old pollInterfaces — no more chicken-and-egg problem.
      */
+    /**
+     * Check if an interface name indicates a virtual/tunnel interface
+     * that should be skipped during discovery.
+     */
+    private isVirtualInterface(name: string): boolean {
+        if (!name) return false;
+        const lower = name.toLowerCase();
+        return /^(pppoe-|<pppoe-|pptp-|l2tp-|sstp-|ovpn-|lo$|Null|unrouted|sit\d)/i.test(name)
+            || lower === 'lo'
+            || lower.startsWith('pppoe-')
+            || lower.startsWith('<pppoe-')
+            || lower.startsWith('pptp-')
+            || lower.startsWith('l2tp-')
+            || lower.startsWith('sstp-')
+            || lower.startsWith('ovpn-')
+            || lower.startsWith('gre-')
+            || lower.startsWith('ipip-')
+            || lower.startsWith('eoip-');
+    }
+
     private async discoverAndPollInterfaces(target: SnmpTarget, device: any) {
         try {
             const snmpInterfaces = await this.snmp.getInterfaces(target);
             const now = new Date();
 
+            let discovered = 0;
+            let skippedVirtual = 0;
+
             for (const iface of snmpInterfaces) {
+                const ifName = iface.ifName || iface.ifDescr || `if${iface.ifIndex}`;
+
+                // Skip virtual/PPPoE/tunnel interfaces — don't even save them
+                if (this.isVirtualInterface(ifName)) {
+                    skippedVirtual++;
+                    continue;
+                }
+
+                discovered++;
+
                 // Upsert interface into DB (auto-discovery)
                 const dbIface = await this.prisma.interface.upsert({
                     where: {
@@ -246,7 +291,7 @@ export class PollingProcessor extends WorkerHost {
                         },
                     },
                     update: {
-                        ifName: iface.ifName || iface.ifDescr || `if${iface.ifIndex}`,
+                        ifName,
                         ifDescr: iface.ifDescr,
                         ifAlias: iface.ifAlias || null,
                         ifType: String(iface.ifType || ''),
@@ -258,7 +303,7 @@ export class PollingProcessor extends WorkerHost {
                     create: {
                         deviceId: device.id,
                         ifIndex: iface.ifIndex,
-                        ifName: iface.ifName || iface.ifDescr || `if${iface.ifIndex}`,
+                        ifName,
                         ifDescr: iface.ifDescr,
                         ifAlias: iface.ifAlias || null,
                         ifType: String(iface.ifType || ''),
@@ -266,7 +311,8 @@ export class PollingProcessor extends WorkerHost {
                         ifHighSpeed: BigInt(iface.ifHighSpeed || 0),
                         ifAdminStatus: iface.ifAdminStatus === 1 ? 'up' : 'down',
                         ifOperStatus: iface.ifOperStatus === 1 ? 'up' : 'down',
-                        pollingEnabled: true,
+                        // New interfaces default to OFF — user must enable
+                        pollingEnabled: false,
                     },
                 });
 
@@ -397,6 +443,20 @@ export class PollingProcessor extends WorkerHost {
         }
 
         return target;
+    }
+
+    /**
+     * Extract OS version from sysDescr.
+     */
+    private extractOsVersion(sysDescr: string): string {
+        if (!sysDescr) return '';
+        const mtMatch = sysDescr.match(/RouterOS\s+([\d.]+)/i);
+        if (mtMatch) return `RouterOS ${mtMatch[1]}`;
+        const iosMatch = sysDescr.match(/Version\s+([\d.()A-Za-z]+)/i);
+        if (iosMatch) return iosMatch[1];
+        const linuxMatch = sysDescr.match(/Linux\s+\S+\s+([\d.\-a-z]+)/i);
+        if (linuxMatch) return `Linux ${linuxMatch[1]}`;
+        return sysDescr.split('\n')[0].substring(0, 100);
     }
 
     /**

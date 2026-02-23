@@ -20,6 +20,8 @@ import {
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/toast';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { api } from '@/lib/api-client';
 
 /* ─── Helpers ────────────────────────────────────────────── */
 
@@ -40,17 +42,19 @@ function formatSpeed(speed: number | null): string {
 }
 
 function formatBps(b: number): string {
-    if (b >= 1e9) return (b / 1e9).toFixed(1) + ' Gbps';
-    if (b >= 1e6) return (b / 1e6).toFixed(1) + ' Mbps';
-    if (b >= 1e3) return (b / 1e3).toFixed(1) + ' Kbps';
-    return b.toFixed(0) + ' bps';
+    const n = Number(b) || 0;
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' Gbps';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + ' Mbps';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + ' Kbps';
+    return n.toFixed(0) + ' bps';
 }
 
 function formatBpsShort(b: number): string {
-    if (b >= 1e9) return (b / 1e9).toFixed(1) + 'G';
-    if (b >= 1e6) return (b / 1e6).toFixed(1) + 'M';
-    if (b >= 1e3) return (b / 1e3).toFixed(1) + 'K';
-    return b.toFixed(0);
+    const n = Number(b) || 0;
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'G';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return n.toFixed(0);
 }
 
 function formatBytes(b: number | null): string {
@@ -92,7 +96,7 @@ function MetricChartPanel({ title, icon: Icon, data, unit, color, maxVal, label 
                     backgroundColor: '#fff',
                     borderColor: '#d4d4d4',
                     textStyle: { color: '#1e293b', fontSize: 11 },
-                    valueFormatter: (v: number) => `${v.toFixed(1)}${unit}`,
+                    valueFormatter: (v: number) => `${Number(v || 0).toFixed(1)}${unit}`,
                 },
                 grid: { left: 45, right: 16, top: 12, bottom: 32 },
                 xAxis: {
@@ -318,29 +322,6 @@ function InterfaceTrafficPanel({ deviceId, iface, rangeIdx, hours }: {
     );
 }
 
-/* ─── Confirm Dialog ─────────────────────────────────────── */
-
-function ConfirmDialog({
-    open, title, message, confirmLabel, loading, onConfirm, onCancel,
-}: {
-    open: boolean; title: string; message: string; confirmLabel: string;
-    loading?: boolean; onConfirm: () => void; onCancel: () => void;
-}) {
-    if (!open) return null;
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-                <p className="mt-2 text-sm text-gray-500 leading-relaxed">{message}</p>
-                <div className="mt-5 flex justify-end gap-3">
-                    <button onClick={onCancel} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
-                    <button onClick={onConfirm} disabled={loading} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60 transition-colors">{loading ? 'Deleting...' : confirmLabel}</button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 /* ─── Main Page ──────────────────────────────────────────── */
 
 export default function DeviceDetailPage() {
@@ -416,6 +397,22 @@ export default function DeviceDetailPage() {
             || (iface.ifAlias || '').toLowerCase().includes(q)
             || (iface.ifDescr || '').toLowerCase().includes(q);
     });
+
+    const monitoredInterfaces = interfaces.filter((iface: any) => iface.pollingEnabled);
+
+    const handleTogglePolling = async (ifaceId: number, currentState: boolean) => {
+        try {
+            await api.patch(`/interfaces/${ifaceId}`, { pollingEnabled: !currentState });
+            addToast({
+                type: 'success',
+                title: !currentState ? 'Monitoring Enabled' : 'Monitoring Disabled',
+                message: !currentState ? 'Interface will be polled on next cycle.' : 'Interface monitoring stopped.',
+            });
+            refetch();
+        } catch {
+            addToast({ type: 'error', title: 'Update Failed', message: 'Could not update interface.' });
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -637,11 +634,11 @@ export default function DeviceDetailPage() {
             </div>
 
             {/* Interface Traffic Charts */}
-            {interfaces.length > 0 && (
+            {monitoredInterfaces.length > 0 && (
                 <div>
-                    <h3 className="font-bold text-lg mb-4">Interface Traffic</h3>
+                    <h3 className="font-bold text-lg mb-4">Interface Traffic <span className="text-sm font-normal text-gray-400">({monitoredInterfaces.length} monitored)</span></h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {interfaces
+                        {monitoredInterfaces
                             .map((iface: any) => (
                                 <InterfaceTrafficPanel
                                     key={iface.id}
@@ -674,19 +671,30 @@ export default function DeviceDetailPage() {
                         <table className="w-full text-left text-sm">
                             <thead>
                                 <tr className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
-                                    <th className="px-6 py-3">Status</th>
-                                    <th className="px-6 py-3">Interface</th>
-                                    <th className="px-6 py-3">Speed</th>
-                                    <th className="px-6 py-3">Type</th>
-                                    <th className="px-6 py-3 text-right">Action</th>
+                                    <th className="px-4 py-3 w-16">Monitor</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Interface</th>
+                                    <th className="px-4 py-3">Speed</th>
+                                    <th className="px-4 py-3">Type</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {filteredInterfaces.map((iface: any) => {
                                     const isUp = iface.ifOperStatus === 'up';
+                                    const isMonitored = iface.pollingEnabled;
                                     return (
                                         <tr key={iface.id} className="hover:bg-gray-50/50 transition-colors">
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-3">
+                                                <button
+                                                    onClick={() => handleTogglePolling(iface.id, isMonitored)}
+                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${isMonitored ? 'bg-blue-500' : 'bg-gray-300'
+                                                        }`}
+                                                >
+                                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${isMonitored ? 'translate-x-4' : 'translate-x-0.5'
+                                                        }`} />
+                                                </button>
+                                            </td>
+                                            <td className="px-4 py-3">
                                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isUp
                                                     ? 'bg-emerald-100 text-emerald-600'
                                                     : 'bg-gray-100 text-gray-500'
@@ -694,17 +702,12 @@ export default function DeviceDetailPage() {
                                                     {isUp ? 'UP' : 'DOWN'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-3">
                                                 <p className="font-semibold">{iface.ifName || `if${iface.ifIndex}`}</p>
                                                 <p className="text-xs text-gray-400">{iface.ifAlias || iface.ifDescr || '—'}</p>
                                             </td>
-                                            <td className="px-6 py-4">{formatSpeed(Number(iface.ifSpeed) || 0)}</td>
-                                            <td className="px-6 py-4 text-gray-500">{iface.ifType || '—'}</td>
-                                            <td className="px-6 py-4 text-right">
-                                                <button className="text-gray-400 hover:text-blue-500 transition-colors">
-                                                    <MonitorDot className="h-5 w-5" />
-                                                </button>
-                                            </td>
+                                            <td className="px-4 py-3">{formatSpeed(Number(iface.ifSpeed) || 0)}</td>
+                                            <td className="px-4 py-3 text-gray-500">{iface.ifType || '—'}</td>
                                         </tr>
                                     );
                                 })}

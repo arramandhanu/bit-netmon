@@ -216,6 +216,37 @@ export class DevicesService {
         return { deleted: result.count, message: `${result.count} device(s) deleted` };
     }
 
+    async bulkUpdate(ids: number[], dto: UpdateDeviceDto) {
+        if (!ids.length || Object.keys(dto).length === 0) {
+            return { updated: 0, message: 'No updates provided' };
+        }
+
+        const data: any = { ...dto };
+
+        // Ensure we encrypt credentials if they are part of the mass update
+        if (dto.snmpCommunity) {
+            data.snmpCommunity = this.encryption.encrypt(dto.snmpCommunity);
+        }
+        if (dto.snmpV3AuthPass) {
+            data.snmpV3AuthPass = this.encryption.encrypt(dto.snmpV3AuthPass);
+        }
+        if (dto.snmpV3PrivPass) {
+            data.snmpV3PrivPass = this.encryption.encrypt(dto.snmpV3PrivPass);
+        }
+
+        // We can't bulk-update hostname safely because it must be unique. Let's explicitly strip it.
+        delete data.hostname;
+        delete data.ipAddress; // Also probably bad to mass-update IP
+
+        const result = await this.prisma.device.updateMany({
+            where: { id: { in: ids } },
+            data,
+        });
+
+        this.logger.log(`Bulk updated ${result.count} devices (ids: ${ids.join(', ')})`);
+        return { updated: result.count, message: `${result.count} device(s) updated` };
+    }
+
     /**
      * Internal method — returns decrypted credentials for SNMP operations.
      * Should NEVER be exposed via API response.
@@ -309,5 +340,33 @@ export class DevicesService {
                 warning: 'Device is reachable but could not fetch full system info: ' + err.message,
             };
         }
+    }
+
+    // ─── Maintenance Windows ────────────────────────────
+
+    async startMaintenance(id: number, reason?: string, endsAt?: Date) {
+        const device = await this.prisma.device.findUnique({ where: { id } });
+        if (!device) throw new NotFoundException(`Device #${id} not found`);
+
+        const updated = await this.prisma.device.update({
+            where: { id },
+            data: { status: 'maintenance' },
+        });
+
+        this.logger.log(`Device #${id} placed in maintenance mode${reason ? ': ' + reason : ''}`);
+        return { ...updated, maintenanceReason: reason, maintenanceEndsAt: endsAt?.toISOString() };
+    }
+
+    async endMaintenance(id: number) {
+        const device = await this.prisma.device.findUnique({ where: { id } });
+        if (!device) throw new NotFoundException(`Device #${id} not found`);
+
+        const updated = await this.prisma.device.update({
+            where: { id },
+            data: { status: 'unknown' }, // will be corrected on next poll cycle
+        });
+
+        this.logger.log(`Device #${id} removed from maintenance mode`);
+        return updated;
     }
 }

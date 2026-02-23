@@ -175,6 +175,28 @@ export class UpdateDeviceDto {
     status?: string;
 }
 
+
+export class BulkDeleteDeviceDto {
+    @ApiProperty({ type: [Number], example: [1, 2, 3] })
+    @IsArray()
+    @IsInt({ each: true })
+    @ArrayMinSize(1)
+    ids: number[];
+}
+
+export class BulkUpdateDeviceDto {
+    @ApiProperty({ type: [Number], example: [1, 2, 3] })
+    @IsArray()
+    @IsInt({ each: true })
+    @ArrayMinSize(1)
+    ids: number[];
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @Type(() => UpdateDeviceDto)
+    data: UpdateDeviceDto;
+}
+
 export class DeviceQueryDto {
     @ApiPropertyOptional({ default: 1 })
     @IsInt()
@@ -212,15 +234,6 @@ export class DeviceQueryDto {
     @IsOptional()
     @Transform(({ value }) => value?.trim())
     search?: string;
-}
-
-export class BulkDeleteDeviceDto {
-    @ApiProperty({ type: [Number], example: [1, 2, 3] })
-    @IsArray()
-    @ArrayMinSize(1)
-    @IsInt({ each: true })
-    @Type(() => Number)
-    ids: number[];
 }
 
 export class TestSnmpDto {

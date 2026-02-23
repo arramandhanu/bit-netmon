@@ -7,6 +7,7 @@ import { useDevice, updateDevice, deleteDevice } from '@/hooks/use-devices';
 import { useToast } from '@/components/ui/toast';
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function EditDevicePage() {
     const router = useRouter();
@@ -129,11 +130,17 @@ export default function EditDevicePage() {
                 submitLabel="Save Changes"
                 submittingLabel="Saving..."
                 lastUpdated={new Date(device.updatedAt).toLocaleString()}
-                onDelete={() => {
-                    if (confirm(`Are you sure you want to delete "${device.hostname}"? This action cannot be undone.`)) {
-                        handleDelete();
-                    }
-                }}
+                onDelete={() => setShowDeleteConfirm(true)}
+            />
+
+            <ConfirmDialog
+                open={showDeleteConfirm}
+                title="Delete Device"
+                message={`Are you sure you want to delete "${device.hostname}"? This action cannot be undone and will permanently remove all associated metrics and history.`}
+                confirmLabel="Delete Device"
+                loading={deleting}
+                onConfirm={handleDelete}
+                onCancel={() => setShowDeleteConfirm(false)}
             />
         </>
     );

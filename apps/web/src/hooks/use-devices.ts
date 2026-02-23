@@ -27,6 +27,20 @@ export interface Device {
     updatedAt: string;
 }
 
+/** Fields accepted on device create/update that are write-only (not returned in GET) */
+export interface DeviceWriteFields {
+    snmpCommunity?: string;
+    snmpPort?: number;
+    pollingEnabled?: boolean;
+    snmpV3User?: string;
+    snmpV3AuthProto?: string;
+    snmpV3AuthPass?: string;
+    snmpV3PrivProto?: string;
+    snmpV3PrivPass?: string;
+}
+
+export type CreateDeviceDto = Partial<Device> & DeviceWriteFields;
+
 export interface DeviceInterface {
     id: number;
     deviceId: number;
@@ -120,12 +134,12 @@ export function useDevice(id: number | string) {
 
 /* ─── Mutations ──────────────────────────────────────────── */
 
-export async function createDevice(dto: Partial<Device>) {
+export async function createDevice(dto: CreateDeviceDto) {
     const { data } = await api.post<Device>('/devices', dto);
     return data;
 }
 
-export async function updateDevice(id: number, dto: Partial<Device>) {
+export async function updateDevice(id: number, dto: Partial<Device> & DeviceWriteFields) {
     const { data } = await api.patch<Device>(`/devices/${id}`, dto);
     return data;
 }
