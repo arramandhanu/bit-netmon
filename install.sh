@@ -342,10 +342,10 @@ install_postgresql() {
 
     case "$OS" in
         debian)
-            echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -cs) main" | \
-                $SUDO_CMD tee /etc/apt/sources.list.d/timescaledb.list >/dev/null
             wget -qO - https://packagecloud.io/timescale/timescaledb/gpgkey | \
                 $SUDO_CMD gpg --dearmor -o /usr/share/keyrings/timescaledb-keyring.gpg 2>/dev/null || true
+            echo "deb [signed-by=/usr/share/keyrings/timescaledb-keyring.gpg] https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -cs) main" | \
+                $SUDO_CMD tee /etc/apt/sources.list.d/timescaledb.list >/dev/null
             $SUDO_CMD apt-get update -qq
             $SUDO_CMD apt-get install -y -qq timescaledb-2-postgresql-${PG_VERSION} || {
                 warn "TimescaleDB package not found — install manually: https://docs.timescale.com/install"
