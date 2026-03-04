@@ -19,6 +19,7 @@ const PERMISSIONS: Record<AppRole, Set<string>> = {
     admin: new Set([
         'devices:read', 'devices:write', 'devices:delete',
         'alerts:read', 'alerts:write', 'alerts:acknowledge',
+        'tickets:read', 'tickets:write', 'tickets:delete',
         'users:read', 'users:write', 'users:delete',
         'discovery:run',
         'reports:generate',
@@ -28,6 +29,7 @@ const PERMISSIONS: Record<AppRole, Set<string>> = {
     operator: new Set([
         'devices:read', 'devices:write',
         'alerts:read', 'alerts:write', 'alerts:acknowledge',
+        'tickets:read', 'tickets:write',
         'discovery:run',
         'reports:generate',
         'settings:read',
@@ -36,6 +38,7 @@ const PERMISSIONS: Record<AppRole, Set<string>> = {
     viewer: new Set([
         'devices:read',
         'alerts:read',
+        'tickets:read',
         'reports:generate',
         'settings:read',
         'audit:read',

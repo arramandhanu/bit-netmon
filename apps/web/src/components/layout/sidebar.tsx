@@ -17,6 +17,7 @@ import {
     Search,
     Shield,
     Wifi,
+    Ticket,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -35,6 +36,7 @@ const navigation: NavItem[] = [
     { label: 'Interfaces', href: '/interfaces', icon: Activity },
     { label: 'Wireless', href: '/wireless', icon: Wifi },
     { label: 'Alerts', href: '/alerts', icon: Bell },
+    { label: 'Tickets', href: '/tickets', icon: Ticket },
 ];
 
 const adminNavigation: NavItem[] = [
@@ -44,9 +46,13 @@ const adminNavigation: NavItem[] = [
     { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+    collapsed: boolean;
+    onToggle: () => void;
+}
+
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const pathname = usePathname();
-    const [collapsed, setCollapsed] = useState(false);
 
     return (
         <aside
@@ -59,6 +65,25 @@ export function Sidebar() {
                 collapsed ? 'w-[68px]' : 'w-[240px]',
             )}
         >
+            {/* Floating edge toggle — visible from both sides */}
+            <button
+                onClick={onToggle}
+                className={clsx(
+                    'absolute top-[22px] z-50',
+                    'flex h-7 w-7 items-center justify-center',
+                    'rounded-full border border-border/60 bg-card shadow-md',
+                    'text-muted-foreground hover:text-foreground hover:bg-accent hover:shadow-lg',
+                    'transition-all duration-200',
+                    '-right-3.5',
+                )}
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+                {collapsed
+                    ? <ChevronRight className="h-3.5 w-3.5" />
+                    : <ChevronLeft className="h-3.5 w-3.5" />
+                }
+            </button>
+
             {/* Logo */}
             <div className="flex h-16 items-center gap-3 px-4 border-b border-border/50">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg gradient-primary">
@@ -94,6 +119,7 @@ export function Sidebar() {
                                         : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                                     collapsed && 'justify-center px-0',
                                 )}
+                                title={collapsed ? item.label : undefined}
                             >
                                 <item.icon className={clsx('h-[18px] w-[18px] shrink-0', isActive && 'text-primary')} />
                                 {!collapsed && <span>{item.label}</span>}
@@ -129,6 +155,7 @@ export function Sidebar() {
                                         : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                                     collapsed && 'justify-center px-0',
                                 )}
+                                title={collapsed ? item.label : undefined}
                             >
                                 <item.icon className="h-[18px] w-[18px] shrink-0" />
                                 {!collapsed && <span>{item.label}</span>}
@@ -137,16 +164,7 @@ export function Sidebar() {
                     );
                 })}
             </nav>
-
-            {/* Collapse toggle */}
-            <div className="border-t border-border/50 p-3">
-                <button
-                    onClick={() => setCollapsed(!collapsed)}
-                    className="flex w-full items-center justify-center rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                >
-                    {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-                </button>
-            </div>
         </aside>
     );
 }
+

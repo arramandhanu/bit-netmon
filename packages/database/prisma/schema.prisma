@@ -66,6 +66,36 @@ enum UserRole {
   @@map("user_role")
 }
 
+enum TicketStatus {
+  open
+  in_progress
+  waiting
+  escalated
+  on_hold
+  resolved
+  closed
+
+  @@map("ticket_status")
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  critical
+
+  @@map("ticket_priority")
+}
+
+enum TicketCategory {
+  incident
+  problem
+  change_request
+  maintenance
+
+  @@map("ticket_category")
+}
+
 // ─── Location ───────────────────────────────────────────
 
 model Location {
@@ -99,6 +129,7 @@ model Device {
   serialNumber     String?      @map("serial_number") @db.VarChar(100)
   sysObjectId      String?      @map("sys_object_id") @db.VarChar(255)
   status           DeviceStatus @default(unknown)
+
   uptime           BigInt?      @default(0)
 
   // SNMP credentials (encrypted at rest)
@@ -124,6 +155,7 @@ model Device {
   alertHistory     AlertHistory[]
   groups           DeviceGroupMember[]
   pollingJobs      PollingJob[]
+  tickets          Ticket[]
 
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
@@ -205,6 +237,7 @@ model AlertHistory {
 
   device         Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   rule           AlertRule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  tickets        Ticket[]
 
   @@index([deviceId, triggeredAt], map: "idx_alerts_device_time")
   @@index([state], map: "idx_alerts_state")
@@ -274,8 +307,11 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  auditLogs    AuditLog[]
-  apiKeys      ApiKey[]
+  auditLogs          AuditLog[]
+  apiKeys            ApiKey[]
+  createdTickets     Ticket[]          @relation("TicketCreator")
+  assignedTickets    Ticket[]          @relation("TicketAssignee")
+  ticketComments     TicketComment[]
 
   @@map("users")
 }
@@ -330,3 +366,87 @@ model ApiKey {
   @@index([userId], map: "idx_api_keys_user")
   @@map("api_keys")
 }
+
+// ─── Ticket ─────────────────────────────────────────────
+
+model Ticket {
+  id             Int              @id @default(autoincrement()) @map("ticket_id")
+  ticketNumber   String           @unique @map("ticket_number") @db.VarChar(20)
+  title          String           @db.VarChar(500)
+  description    String           @db.Text
+  status         TicketStatus     @default(open)
+  priority       TicketPriority   @default(medium)
+  category       TicketCategory   @default(incident)
+  tags           String[]         @default([])
+
+  // Relations
+  deviceId       Int?             @map("device_id")
+  device         Device?          @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  alertId        Int?             @map("alert_id")
+  alert          AlertHistory?    @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  creatorId      Int              @map("creator_id")
+  creator        User             @relation("TicketCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  assigneeId     Int?             @map("assignee_id")
+  assignee       User?            @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  // Timestamps
+  dueDate        DateTime?        @map("due_date")
+  resolvedAt     DateTime?        @map("resolved_at")
+  closedAt       DateTime?        @map("closed_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  comments       TicketComment[]
+  attachments    TicketAttachment[]
+
+  @@index([status], map: "idx_tickets_status")
+  @@index([priority], map: "idx_tickets_priority")
+  @@index([assigneeId], map: "idx_tickets_assignee")
+  @@index([deviceId], map: "idx_tickets_device")
+  @@index([creatorId], map: "idx_tickets_creator")
+  @@index([createdAt], map: "idx_tickets_created")
+  @@map("tickets")
+}
+
+// ─── Ticket Comment ─────────────────────────────────────
+
+model TicketComment {
+  id        Int      @id @default(autoincrement()) @map("comment_id")
+  ticketId  Int      @map("ticket_id")
+  userId    Int      @map("user_id")
+  content   String   @db.Text
+  isSystem  Boolean  @default(false) @map("is_system")
+  parentId  Int?     @map("parent_id")
+
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    TicketComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies   TicketComment[] @relation("CommentReplies")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([ticketId, createdAt], map: "idx_ticket_comments_ticket")
+  @@index([parentId], map: "idx_ticket_comments_parent")
+  @@map("ticket_comments")
+}
+
+// ─── Ticket Attachment ──────────────────────────────────
+
+model TicketAttachment {
+  id          Int      @id @default(autoincrement()) @map("attachment_id")
+  ticketId    Int      @map("ticket_id")
+  uploadedBy  Int      @map("uploaded_by")
+  fileName    String   @map("file_name") @db.VarChar(255)
+  fileSize    Int      @map("file_size")
+  mimeType    String   @map("mime_type") @db.VarChar(100)
+  storagePath String   @map("storage_path") @db.VarChar(512)
+
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([ticketId], map: "idx_ticket_attachments_ticket")
+  @@map("ticket_attachments")
+}
+
