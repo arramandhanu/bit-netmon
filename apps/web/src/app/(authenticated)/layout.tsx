@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { useRequireAuth } from '@/hooks/use-auth';
@@ -16,6 +17,7 @@ export default function AuthenticatedLayout({
     children: React.ReactNode;
 }) {
     const isAuthenticated = useRequireAuth();
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     // Show nothing while checking auth — prevents flash of content
     if (!isAuthenticated) {
@@ -29,8 +31,11 @@ export default function AuthenticatedLayout({
     return (
         <ToastProvider>
             <div className="flex min-h-screen">
-                <Sidebar />
-                <main className="flex-1 ml-[240px]">
+                <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+                <main
+                    className="flex-1 transition-all duration-300 ease-out"
+                    style={{ marginLeft: sidebarCollapsed ? 68 : 240 }}
+                >
                     <Header />
                     <div className="p-6">{children}</div>
                 </main>

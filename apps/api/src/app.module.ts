@@ -22,6 +22,7 @@ import { AlertingModule } from './modules/alerting/alerting.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { TicketsModule } from './modules/tickets/tickets.module';
 
 @Module({
     imports: [
@@ -71,6 +72,7 @@ import { ReportsModule } from './modules/reports/reports.module';
         SettingsModule,
         AuditModule,
         ReportsModule,
+        TicketsModule,
 
         // ─── Rate Limiting ─────────────────────────────
         ThrottlerModule.forRoot([{
