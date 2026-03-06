@@ -79,8 +79,8 @@ export class AuthController {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @RequirePermission('users:delete')
     @ApiBearerAuth()
-    @ApiOperation({ summary: 'Delete a user permanently (admin only)' })
+    @ApiOperation({ summary: 'Deactivate a user (admin only)' })
     deleteUser(@Param('id', ParseIntPipe) id: number) {
-        return this.authService.deleteUser(id);
+        return this.authService.deactivateUser(id);
     }
 }

@@ -11,8 +11,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
     title: 'NetMon — Network Monitoring',
-    description: 'BIT Enterprise Network Monitoring',
-    icons: { icon: '/favicon.ico' },
+    description: 'Network Monitoring by PT Bintang Inovasi Teknologi',
+    icons: { icon: '/images/bit-favicon.png' },
 };
 
 export default function RootLayout({

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Activity, Eye, EyeOff, Lock, User, Monitor, Shield, Wifi } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Monitor, Shield, Wifi } from 'lucide-react';
+import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
 
 export default function LoginPage() {
@@ -41,9 +42,7 @@ export default function LoginPage() {
                 {/* Branding */}
                 <div className="relative z-10 p-10 pt-12">
                     <div className="flex items-center gap-3 mb-2">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm border border-white/10">
-                            <Activity className="h-5 w-5 text-white" />
-                        </div>
+                        <Image src="/images/bit-favicon.png" alt="BIT" width={44} height={44} className="rounded-xl" />
                         <span className="text-xl font-bold text-white tracking-tight">NetMon</span>
                     </div>
                 </div>
@@ -83,7 +82,7 @@ export default function LoginPage() {
 
                 {/* Bottom */}
                 <div className="relative z-10 p-10 pb-8">
-                    <p className="text-xs text-blue-200/50">© 2026 NetMon. All rights reserved.</p>
+                    <p className="text-xs text-blue-200/50">© 2026 PT Bintang Inovasi Teknologi. All rights reserved.</p>
                 </div>
             </div>
 
@@ -98,9 +97,7 @@ export default function LoginPage() {
                 <div className="relative w-full max-w-[420px] mx-6">
                     {/* Mobile logo (hidden on desktop where left panel has it) */}
                     <div className="flex flex-col items-center mb-8 lg:hidden">
-                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/25 mb-4">
-                            <Activity className="h-7 w-7 text-white" />
-                        </div>
+                        <Image src="/images/bit-logo.png" alt="BIT Logo" width={160} height={50} className="mb-4" />
                         <h1 className="text-2xl font-bold tracking-tight text-gray-900">NetMon</h1>
                         <p className="text-sm text-gray-500 mt-1">Network Monitoring System</p>
                     </div>

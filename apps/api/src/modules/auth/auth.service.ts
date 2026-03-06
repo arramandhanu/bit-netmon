@@ -2,9 +2,7 @@ import {
     Injectable,
     UnauthorizedException,
     ConflictException,
-    ForbiddenException,
     Logger,
-    OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -20,11 +18,7 @@ interface TokenPayload {
 }
 
 @Injectable()
-export class AuthService implements OnModuleInit {
-    async onModuleInit() {
-        await this.ensureDefaultAdmin();
-    }
-
+export class AuthService {
     private readonly logger = new Logger(AuthService.name);
     private readonly jwtSecret: string;
 
@@ -252,40 +246,14 @@ export class AuthService implements OnModuleInit {
     }
 
     /**
-     * Delete a user permanently.
-     * The default admin user (username = 'admin') cannot be deleted.
+     * Deactivate a user (soft delete).
      */
-    async deleteUser(id: number) {
-        const user = await this.prisma.user.findUnique({ where: { id }, select: { username: true } });
-        if (!user) {
-            throw new ForbiddenException('User not found');
-        }
-        if (user.username === 'admin') {
-            throw new ForbiddenException('Cannot delete the default admin user');
-        }
-        return this.prisma.user.delete({
+    async deactivateUser(id: number) {
+        return this.prisma.user.update({
             where: { id },
-            select: { id: true, username: true },
+            data: { isActive: false },
+            select: { id: true, username: true, isActive: true },
         });
     }
-
-    /**
-     * Ensure the default admin user exists on application startup.
-     */
-    async ensureDefaultAdmin() {
-        const existing = await this.prisma.user.findUnique({ where: { username: 'admin' } });
-        if (!existing) {
-            const hash = await bcrypt.hash('admin', 10);
-            await this.prisma.user.create({
-                data: {
-                    username: 'admin',
-                    email: 'admin@netmon.local',
-                    passwordHash: hash,
-                    role: 'admin',
-                    isActive: true,
-                },
-            });
-            this.logger.log('Default admin user created (admin / admin)');
-        }
-    }
 }
+

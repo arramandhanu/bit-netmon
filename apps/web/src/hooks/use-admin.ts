@@ -110,7 +110,7 @@ export async function updateUser(id: number, dto: { email?: string; displayName?
     return data;
 }
 
-export async function deleteUser(id: number) {
+export async function deactivateUser(id: number) {
     const { data } = await api.delete(`/auth/users/${id}`);
     return data;
 }
