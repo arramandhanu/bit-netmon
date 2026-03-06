@@ -182,7 +182,7 @@ export default function UsersPage() {
         {
             key: 'isActive',
             header: 'Status',
-            render: (r) => <StatusBadge status={r.isActive ? 'up' : 'down'} />,
+            render: (r) => <StatusBadge status={r.isActive ? 'active' : 'inactive'} />,
         },
         {
             key: 'lastLoginAt',

@@ -2,6 +2,8 @@ import {
     Injectable,
     UnauthorizedException,
     ConflictException,
+    ForbiddenException,
+    OnModuleInit,
     Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -18,8 +20,9 @@ interface TokenPayload {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
     private readonly logger = new Logger(AuthService.name);
+
     private readonly jwtSecret: string;
 
     constructor(
@@ -30,6 +33,29 @@ export class AuthService {
     ) {
         // Secret must stay in env — never in DB
         this.jwtSecret = this.config.getOrThrow<string>('jwt.secret');
+    }
+
+    async onModuleInit() {
+        await this.ensureDefaultAdmin();
+    }
+
+    private async ensureDefaultAdmin() {
+        const adminExists = await this.prisma.user.findUnique({
+            where: { username: 'admin' },
+        });
+
+        if (!adminExists) {
+            const passwordHash = await bcrypt.hash('admin', 10);
+            await this.prisma.user.create({
+                data: {
+                    username: 'admin',
+                    email: 'admin@netmon.local',
+                    passwordHash,
+                    role: 'admin',
+                },
+            });
+            this.logger.log('Default admin user created');
+        }
     }
 
     async register(username: string, email: string, password: string, role?: string) {
@@ -246,12 +272,20 @@ export class AuthService {
     }
 
     /**
-     * Deactivate a user (soft delete).
+     * Delete a user permanently.
      */
-    async deactivateUser(id: number) {
-        return this.prisma.user.update({
+    async deleteUser(id: number) {
+        // Prevent deleting the default admin user
+        const userToDeactivate = await this.prisma.user.findUnique({
             where: { id },
-            data: { isActive: false },
+        });
+
+        if (userToDeactivate?.username === 'admin') {
+            throw new ForbiddenException('Cannot delete the default admin user');
+        }
+
+        return this.prisma.user.delete({
+            where: { id },
             select: { id: true, username: true, isActive: true },
         });
     }
