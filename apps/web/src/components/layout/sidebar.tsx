@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
     LayoutDashboard,
     Server,
@@ -20,12 +20,15 @@ import {
     Ticket,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { getStoredUser } from '@/hooks/use-auth';
 
 interface NavItem {
     label: string;
     href: string;
     icon: React.ElementType;
     badge?: number;
+    /** Which roles can see this item. If omitted, visible to all. */
+    roles?: string[];
 }
 
 const navigation: NavItem[] = [
@@ -40,10 +43,10 @@ const navigation: NavItem[] = [
 ];
 
 const adminNavigation: NavItem[] = [
-    { label: 'Users', href: '/admin/users', icon: Users },
-    { label: 'Discovery', href: '/admin/discovery', icon: Search },
-    { label: 'Security', href: '/admin/security', icon: Shield },
-    { label: 'Settings', href: '/admin/settings', icon: Settings },
+    { label: 'Users', href: '/admin/users', icon: Users, roles: ['admin'] },
+    { label: 'Discovery', href: '/admin/discovery', icon: Search, roles: ['admin', 'operator'] },
+    { label: 'Security', href: '/admin/security', icon: Shield, roles: ['admin'] },
+    { label: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
 ];
 
 interface SidebarProps {
@@ -53,6 +56,16 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const pathname = usePathname();
+    const currentUser = getStoredUser();
+    const userRole = currentUser?.role || 'viewer';
+
+    // Filter admin items by role
+    const visibleAdminNav = useMemo(() => {
+        return adminNavigation.filter(item => {
+            if (!item.roles) return true;
+            return item.roles.includes(userRole);
+        });
+    }, [userRole]);
 
     return (
         <aside
@@ -133,38 +146,42 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     );
                 })}
 
-                <div className="my-4 border-t border-border/50" />
+                {/* Only show Admin section if user has any visible admin items */}
+                {visibleAdminNav.length > 0 && (
+                    <>
+                        <div className="my-4 border-t border-border/50" />
 
-                <p className={clsx(
-                    'text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2',
-                    collapsed ? 'text-center' : 'px-3',
-                )}>
-                    {collapsed ? '•' : 'Admin'}
-                </p>
+                        <p className={clsx(
+                            'text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2',
+                            collapsed ? 'text-center' : 'px-3',
+                        )}>
+                            {collapsed ? '•' : 'Admin'}
+                        </p>
 
-                {adminNavigation.map((item) => {
-                    const isActive = pathname === item.href;
-                    return (
-                        <Link key={item.href} href={item.href}>
-                            <div
-                                className={clsx(
-                                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium',
-                                    'transition-all duration-150',
-                                    isActive
-                                        ? 'bg-primary/10 text-primary'
-                                        : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                                    collapsed && 'justify-center px-0',
-                                )}
-                                title={collapsed ? item.label : undefined}
-                            >
-                                <item.icon className="h-[18px] w-[18px] shrink-0" />
-                                {!collapsed && <span>{item.label}</span>}
-                            </div>
-                        </Link>
-                    );
-                })}
+                        {visibleAdminNav.map((item) => {
+                            const isActive = pathname === item.href;
+                            return (
+                                <Link key={item.href} href={item.href}>
+                                    <div
+                                        className={clsx(
+                                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium',
+                                            'transition-all duration-150',
+                                            isActive
+                                                ? 'bg-primary/10 text-primary'
+                                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                                            collapsed && 'justify-center px-0',
+                                        )}
+                                        title={collapsed ? item.label : undefined}
+                                    >
+                                        <item.icon className="h-[18px] w-[18px] shrink-0" />
+                                        {!collapsed && <span>{item.label}</span>}
+                                    </div>
+                                </Link>
+                            );
+                        })}
+                    </>
+                )}
             </nav>
         </aside>
     );
 }
-

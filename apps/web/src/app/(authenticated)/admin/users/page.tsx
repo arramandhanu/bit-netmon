@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Users, Shield, UserPlus, UserCheck, UserX, Pencil, Trash2, Loader2, X } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { MetricCard } from '@/components/ui/metric-card';
@@ -9,6 +10,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { useUsers, User, createUser, updateUser, deactivateUser } from '@/hooks/use-admin';
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
+import { getStoredUser } from '@/hooks/use-auth';
 
 const roleConfig: Record<string, { bg: string; text: string }> = {
     admin: { bg: 'bg-red-500/10', text: 'text-red-400' },
@@ -106,7 +108,7 @@ function UserModal({ user, onClose, onSaved }: { user?: User | null; onClose: ()
                     )}
                     <div className="flex justify-end gap-3 pt-2">
                         <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-muted/50">Cancel</button>
-                        <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg gradient-primary text-white shadow-lg shadow-primary/25 disabled:opacity-50">
+                        <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-50">
                             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                             {isEdit ? 'Save Changes' : 'Create User'}
                         </button>
@@ -120,9 +122,18 @@ function UserModal({ user, onClose, onSaved }: { user?: User | null; onClose: ()
 /* ─── Main Page ──────────────────────────────────────────── */
 
 export default function UsersPage() {
+    const router = useRouter();
+    const currentUser = getStoredUser();
+    const isAdmin = currentUser?.role === 'admin';
     const { users, loading, error, refetch } = useUsers();
     const [modal, setModal] = useState<{ open: boolean; user?: User | null }>({ open: false });
     const [deleting, setDeleting] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!isAdmin) router.replace('/dashboard');
+    }, [isAdmin, router]);
+
+    if (!isAdmin) return null;
 
     if (loading && !users.length) return <DashboardSkeleton />;
     if (error) return <ErrorState message={error} onRetry={refetch} />;
@@ -223,7 +234,7 @@ export default function UsersPage() {
             <PageHeader title="User Management" subtitle="Manage users and their access roles">
                 <button
                     onClick={() => setModal({ open: true, user: null })}
-                    className="flex items-center gap-2 rounded-lg gradient-primary px-4 py-2 text-sm font-medium text-white shadow-lg shadow-primary/25 hover:opacity-90 transition-all"
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 transition-all"
                 >
                     <UserPlus className="h-4 w-4" />
                     Add User

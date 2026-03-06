@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 
 interface AlertNotification {
     ruleName: string;
@@ -18,21 +19,11 @@ interface AlertNotification {
 @Injectable()
 export class NotificationService {
     private readonly logger = new Logger(NotificationService.name);
-    private readonly telegramToken?: string;
-    private readonly telegramChatId?: string;
-    private readonly smtpHost?: string;
-    private readonly smtpPort?: number;
-    private readonly smtpUser?: string;
-    private readonly smtpPass?: string;
 
-    constructor(private readonly config: ConfigService) {
-        this.telegramToken = this.config.get<string>('telegram.botToken');
-        this.telegramChatId = this.config.get<string>('telegram.chatId');
-        this.smtpHost = this.config.get<string>('smtp.host');
-        this.smtpPort = this.config.get<number>('smtp.port');
-        this.smtpUser = this.config.get<string>('smtp.user');
-        this.smtpPass = this.config.get<string>('smtp.pass');
-    }
+    constructor(
+        private readonly config: ConfigService,
+        private readonly settings: SettingsService,
+    ) { }
 
     /**
      * Dispatch notification to the specified channels.
@@ -71,7 +62,13 @@ export class NotificationService {
     // ─── Telegram ───────────────────────────────────────
 
     private async sendTelegram(alert: AlertNotification) {
-        if (!this.telegramToken || !this.telegramChatId) {
+        // Read live from settings (falls back to env vars)
+        const tokenEnv = this.config.get<string>('telegram.botToken', '');
+        const chatEnv = this.config.get<string>('telegram.chatId', '');
+        const token = await this.settings.getString('notification.telegram.botToken', tokenEnv);
+        const chatId = await this.settings.getString('notification.telegram.chatId', chatEnv);
+
+        if (!token || !chatId) {
             this.logger.warn('Telegram not configured, skipping notification');
             return;
         }
@@ -91,13 +88,13 @@ export class NotificationService {
             `🕐 ${alert.triggeredAt.toISOString()}`,
         ].join('\n');
 
-        const url = `https://api.telegram.org/bot${this.telegramToken}/sendMessage`;
+        const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
         await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                chat_id: this.telegramChatId,
+                chat_id: chatId,
                 text,
                 parse_mode: 'Markdown',
                 disable_web_page_preview: true,
@@ -110,7 +107,18 @@ export class NotificationService {
     // ─── Email ──────────────────────────────────────────
 
     private async sendEmail(alert: AlertNotification) {
-        if (!this.smtpHost || !this.smtpUser) {
+        // Read live from settings (falls back to env vars)
+        const hostEnv = this.config.get<string>('smtp.host', '');
+        const userEnv = this.config.get<string>('smtp.user', '');
+        const passEnv = this.config.get<string>('smtp.pass', '');
+        const portEnv = this.config.get<number>('smtp.port', 587);
+
+        const smtpHost = await this.settings.getString('notification.smtp.host', hostEnv);
+        const smtpUser = await this.settings.getString('notification.smtp.user', userEnv);
+        const smtpPass = await this.settings.getString('notification.smtp.password', passEnv);
+        const smtpPort = await this.settings.getNumber('notification.smtp.port', portEnv);
+
+        if (!smtpHost || !smtpUser) {
             this.logger.warn('SMTP not configured, skipping email notification');
             return;
         }
@@ -120,12 +128,12 @@ export class NotificationService {
             const nodemailer = await import('nodemailer');
 
             const transporter = nodemailer.createTransport({
-                host: this.smtpHost,
-                port: this.smtpPort || 587,
-                secure: this.smtpPort === 465,
+                host: smtpHost,
+                port: smtpPort,
+                secure: smtpPort === 465,
                 auth: {
-                    user: this.smtpUser,
-                    pass: this.smtpPass,
+                    user: smtpUser,
+                    pass: smtpPass,
                 },
             });
 
@@ -149,9 +157,10 @@ export class NotificationService {
                 <p>${alert.message}</p>
             `;
 
+            const emailTo = await this.settings.getString('notification.smtp.to', smtpUser);
             await transporter.sendMail({
-                from: this.smtpUser,
-                to: this.smtpUser, // Default: send to self. Override via rule config later.
+                from: smtpUser,
+                to: emailTo,
                 subject,
                 html,
             });

@@ -1,13 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MetricsQueryDto, MetricInterval } from './metrics.dto';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class MetricsService {
 
     private readonly logger = new Logger(MetricsService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly settings: SettingsService,
+    ) { }
 
     /**
      * Map interval enum to TimescaleDB time_bucket() interval string
@@ -189,6 +193,59 @@ export class MetricsService {
     }
 
     /**
+     * Purge old metrics/alerts/audit logs based on configured retention periods.
+     * Call this from a cron job (e.g., nightly).
+     */
+    async purgeOldData() {
+        const metricsDays = await this.settings.getNumber('retention.metricsDays', 90);
+        const alertDays = await this.settings.getNumber('retention.alertHistoryDays', 365);
+        const auditDays = await this.settings.getNumber('retention.auditLogDays', 180);
+
+        const metricsCutoff = new Date(Date.now() - metricsDays * 86_400_000);
+        const alertCutoff = new Date(Date.now() - alertDays * 86_400_000);
+        const auditCutoff = new Date(Date.now() - auditDays * 86_400_000);
+
+        // Purge TimescaleDB hypertables via raw SQL for efficiency
+        try {
+            await this.prisma.$executeRawUnsafe(
+                `DELETE FROM device_metrics WHERE time < $1`,
+                metricsCutoff,
+            );
+            await this.prisma.$executeRawUnsafe(
+                `DELETE FROM interface_metrics WHERE time < $1`,
+                metricsCutoff,
+            );
+            this.logger.log(
+                `Data retention: purged metrics older than ${metricsDays} days (cutoff: ${metricsCutoff.toISOString()})`,
+            );
+        } catch (err) {
+            this.logger.warn(`Metrics purge failed (table may not exist): ${err}`);
+        }
+
+        // Purge alert history via Prisma
+        const deletedAlerts = await this.prisma.alertHistory.deleteMany({
+            where: { triggeredAt: { lt: alertCutoff } },
+        });
+        this.logger.log(
+            `Data retention: purged ${deletedAlerts.count} alert records older than ${alertDays} days`,
+        );
+
+        // Purge audit logs
+        const deletedAudit = await this.prisma.auditLog.deleteMany({
+            where: { createdAt: { lt: auditCutoff } },
+        });
+        this.logger.log(
+            `Data retention: purged ${deletedAudit.count} audit log records older than ${auditDays} days`,
+        );
+
+        return {
+            metricsCutoff: metricsCutoff.toISOString(),
+            alertsCutoff: alertCutoff.toISOString(),
+            auditCutoff: auditCutoff.toISOString(),
+        };
+    }
+
+    /**
      * Serialize BigInt/Decimal values to JSON-safe numbers.
      */
     private serializeRow(row: any): any {
@@ -205,4 +262,3 @@ export class MetricsService {
         return out;
     }
 }
-

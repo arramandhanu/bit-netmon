@@ -8,15 +8,20 @@ import { api } from '@/lib/api-client';
 export interface AlertRule {
     id: number;
     name: string;
-    metric: string;
+    description?: string;
+    metricName: string;
     condition: string;
     threshold: number;
     duration: number;
     severity: string;
     enabled: boolean;
-    channels: string[];
+    notifyChannels: string[];
+    deviceGroupId?: number;
     createdAt: string;
     updatedAt: string;
+    // Legacy aliases for backwards compat in templates
+    metric?: string;
+    channels?: string[];
 }
 
 export interface AlertEvent {
@@ -180,7 +185,17 @@ export async function resolveAlert(id: number) {
     return data;
 }
 
-export async function createAlertRule(dto: Partial<AlertRule>) {
+export async function createAlertRule(dto: {
+    name: string;
+    description?: string;
+    metricName: string;
+    condition: string;
+    threshold: number;
+    duration?: number;
+    severity?: string;
+    notifyChannels?: string[];
+    deviceGroupId?: number;
+}) {
     const { data } = await api.post<AlertRule>('/alerts/rules', dto);
     return data;
 }

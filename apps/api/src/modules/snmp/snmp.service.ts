@@ -6,6 +6,7 @@ import {
     IF_TABLE_OIDS,
     IF_XTABLE_OIDS,
 } from '@netmon/shared';
+import { SettingsService } from '../settings/settings.service';
 
 export interface SnmpTarget {
     host: string;
@@ -51,22 +52,23 @@ export interface InterfaceInfo {
 @Injectable()
 export class SnmpService {
     private readonly logger = new Logger(SnmpService.name);
-    private readonly defaultTimeout: number;
-    private readonly defaultRetries: number;
 
-    constructor(private readonly config: ConfigService) {
-        this.defaultTimeout = this.config.get<number>('snmp.defaultTimeout', 5000);
-        this.defaultRetries = this.config.get<number>('snmp.defaultRetries', 1);
-    }
+    constructor(
+        private readonly config: ConfigService,
+        private readonly settings: SettingsService,
+    ) { }
 
     /**
      * Create a net-snmp session for the given target.
      * Caller MUST close the session when done.
      */
-    private createSession(target: SnmpTarget): snmp.Session {
-        const timeout = target.timeout || this.defaultTimeout;
-        const retries = target.retries || this.defaultRetries;
-        const port = target.port || 161;
+    private async createSession(target: SnmpTarget): Promise<snmp.Session> {
+        const timeoutCfg = this.config.get<number>('snmp.defaultTimeout', 5000);
+        const retriesCfg = this.config.get<number>('snmp.defaultRetries', 1);
+
+        const timeout = target.timeout || await this.settings.getNumber('snmp.timeout', timeoutCfg);
+        const retries = target.retries || await this.settings.getNumber('snmp.retries', retriesCfg);
+        const port = target.port || await this.settings.getNumber('snmp.port', 161);
 
         if (target.version === 'v3') {
             const user: any = { name: target.v3User || '' };
@@ -100,7 +102,9 @@ export class SnmpService {
             ? snmp.Version1
             : snmp.Version2c;
 
-        return snmp.createSession(target.host, target.community || 'public', {
+        const defaultCommunity = await this.settings.getString('snmp.defaultCommunity', 'public');
+
+        return snmp.createSession(target.host, target.community || defaultCommunity, {
             port,
             version,
             timeout,
@@ -130,7 +134,7 @@ export class SnmpService {
      * SNMP GET — fetch one or more OIDs
      */
     async get(target: SnmpTarget, oids: string[]): Promise<Map<string, any>> {
-        const session = this.createSession(target);
+        const session = await this.createSession(target);
         try {
             return await new Promise<Map<string, any>>((resolve, reject) => {
                 session.get(oids, (error: Error | null, varbinds: any[]) => {
@@ -162,7 +166,7 @@ export class SnmpService {
      * SNMP subtree walk — enumerate all OIDs under a base OID
      */
     async walk(target: SnmpTarget, baseOid: string): Promise<Map<string, any>> {
-        const session = this.createSession(target);
+        const session = await this.createSession(target);
         const result = new Map<string, any>();
 
         try {

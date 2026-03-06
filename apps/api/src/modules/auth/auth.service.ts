@@ -9,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { SettingsService } from '../settings/settings.service';
 
 interface TokenPayload {
     sub: number;
@@ -20,20 +21,18 @@ interface TokenPayload {
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
     private readonly jwtSecret: string;
-    private readonly jwtExpiresIn: string;
-    private readonly jwtRefreshExpiresIn: string;
 
     constructor(
         private readonly prisma: PrismaService,
         private readonly config: ConfigService,
         private readonly auditService: AuditService,
+        private readonly settings: SettingsService,
     ) {
+        // Secret must stay in env — never in DB
         this.jwtSecret = this.config.getOrThrow<string>('jwt.secret');
-        this.jwtExpiresIn = this.config.get<string>('jwt.expiresIn', '15m');
-        this.jwtRefreshExpiresIn = this.config.get<string>('jwt.refreshExpiresIn', '7d');
     }
 
-    async register(username: string, email: string, password: string) {
+    async register(username: string, email: string, password: string, role?: string) {
         const existing = await this.prisma.user.findFirst({
             where: { OR: [{ username }, { email }] },
         });
@@ -48,17 +47,21 @@ export class AuthService {
 
         const passwordHash = await bcrypt.hash(password, 12);
 
+        // First user is always admin; subsequent users use provided role or default to 'viewer'
+        const userCount = await this.prisma.user.count();
+        const assignedRole = userCount === 0 ? 'admin' : (role || 'viewer');
+
         const user = await this.prisma.user.create({
             data: {
                 username,
                 email,
                 passwordHash,
-                role: 'admin', // First user is admin; later users default to 'viewer'
+                role: assignedRole as any,
             },
             select: { id: true, username: true, email: true, role: true },
         });
 
-        this.logger.log(`User registered: ${user.username}`);
+        this.logger.log(`User registered: ${user.username} (role: ${user.role})`);
         return user;
     }
 
@@ -102,14 +105,19 @@ export class AuthService {
             role: user.role,
         };
 
+        const expiresInEnv = this.config.get<string>('jwt.expiresIn', '15m');
+        const refreshExpiresInEnv = this.config.get<string>('jwt.refreshExpiresIn', '7d');
+        const jwtExpiresIn = await this.settings.getString('auth.jwtExpiresIn', expiresInEnv);
+        const jwtRefreshExpiresIn = await this.settings.getString('auth.jwtRefreshExpiresIn', refreshExpiresInEnv);
+
         const accessToken = jwt.sign(payload, this.jwtSecret, {
-            expiresIn: this.jwtExpiresIn as any,
+            expiresIn: jwtExpiresIn as any,
         });
 
         const refreshToken = jwt.sign(
             { sub: user.id, type: 'refresh' },
             this.jwtSecret,
-            { expiresIn: this.jwtRefreshExpiresIn as any },
+            { expiresIn: jwtRefreshExpiresIn as any },
         );
 
         // Log successful login
@@ -157,8 +165,11 @@ export class AuthService {
                 role: user.role,
             };
 
+            const expiresInEnv = this.config.get<string>('jwt.expiresIn', '15m');
+            const jwtExpiresIn = await this.settings.getString('auth.jwtExpiresIn', expiresInEnv);
+
             const accessToken = jwt.sign(payload, this.jwtSecret, {
-                expiresIn: this.jwtExpiresIn as any,
+                expiresIn: jwtExpiresIn as any,
             });
 
             return { accessToken };

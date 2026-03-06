@@ -25,9 +25,10 @@ export class DiscoveryController {
     startScan(@Body() dto: DiscoveryScanDto) {
         return this.discoveryService.startScan({
             subnets: dto.subnets,
-            snmpCommunities: dto.snmpCommunities || ['public'],
-            concurrency: dto.concurrency || 50,
-            timeout: dto.timeout || 3000,
+            // Optional: if not provided, DiscoveryService fills in from settings
+            ...(dto.snmpCommunities?.length && { snmpCommunities: dto.snmpCommunities }),
+            ...(dto.concurrency && { concurrency: dto.concurrency }),
+            ...(dto.timeout && { timeout: dto.timeout }),
         });
     }
 

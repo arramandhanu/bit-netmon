@@ -2,20 +2,19 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class PollingService implements OnModuleInit {
     private readonly logger = new Logger(PollingService.name);
-    private readonly defaultInterval: number;
 
     constructor(
         @InjectQueue('polling') private readonly pollingQueue: Queue,
         private readonly prisma: PrismaService,
+        private readonly settings: SettingsService,
         private readonly config: ConfigService,
-    ) {
-        this.defaultInterval = this.config.get<number>('snmp.pollingInterval', 300);
-    }
+    ) { }
 
     /**
      * On startup, schedule repeatable polling jobs for all enabled devices.
@@ -53,11 +52,13 @@ export class PollingService implements OnModuleInit {
             const jobId = `poll-device-${device.id}`;
             activeDeviceIds.add(jobId);
 
-            const interval = (device.pollingInterval || this.defaultInterval) * 1000;
+            const defaultIntervalEnv = this.config.get<number>('snmp.pollingInterval', 300);
+            const defaultInterval = await this.settings.getNumber('polling.defaultInterval', defaultIntervalEnv);
+            const intervalMs = (device.pollingInterval || defaultInterval) * 1000;
             const existing = existingJobMap.get(jobId);
 
             // Skip if job exists with the same interval
-            if (existing && Number(existing.every) === interval) {
+            if (existing && Number(existing.every) === intervalMs) {
                 continue;
             }
 
@@ -72,14 +73,14 @@ export class PollingService implements OnModuleInit {
                 { deviceId: device.id },
                 {
                     jobId,
-                    repeat: { every: interval },
+                    repeat: { every: intervalMs },
                     removeOnComplete: { count: 10 },
                     removeOnFail: { count: 50 },
                 },
             );
 
             this.logger.log(
-                `Scheduled polling for ${device.hostname} (ID=${device.id}) every ${device.pollingInterval || this.defaultInterval}s`,
+                `Scheduled polling for ${device.hostname} (ID=${device.id}) every ${device.pollingInterval || defaultInterval}s`,
             );
         }
 
