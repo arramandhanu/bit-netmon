@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { MetricCard } from '@/components/ui/metric-card';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { useUsers, User, createUser, updateUser, deactivateUser } from '@/hooks/use-admin';
+import { useUsers, User, createUser, updateUser, deleteUser } from '@/hooks/use-admin';
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
 import { getStoredUser } from '@/hooks/use-auth';
@@ -138,11 +138,11 @@ export default function UsersPage() {
     if (loading && !users.length) return <DashboardSkeleton />;
     if (error) return <ErrorState message={error} onRetry={refetch} />;
 
-    async function handleDeactivate(id: number) {
-        if (!confirm('Deactivate this user?')) return;
+    async function handleDelete(id: number) {
+        if (!confirm('Delete this user permanently? This cannot be undone.')) return;
         setDeleting(id);
         try {
-            await deactivateUser(id);
+            await deleteUser(id);
             refetch();
         } finally {
             setDeleting(null);
@@ -182,7 +182,7 @@ export default function UsersPage() {
         {
             key: 'isActive',
             header: 'Status',
-            render: (r) => <StatusBadge status={r.isActive ? 'up' : 'down'} />,
+            render: (r) => <StatusBadge status={r.isActive ? 'active' : 'inactive'} />,
         },
         {
             key: 'lastLoginAt',
@@ -216,14 +216,16 @@ export default function UsersPage() {
                     >
                         <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                        onClick={() => handleDeactivate(r.id)}
-                        disabled={deleting === r.id}
-                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
-                        title="Deactivate user"
-                    >
-                        {deleting === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
+                    {r.username !== 'admin' && (
+                        <button
+                            onClick={() => handleDelete(r.id)}
+                            disabled={deleting === r.id}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                            title="Delete user"
+                        >
+                            {deleting === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </button>
+                    )}
                 </div>
             ),
         },
