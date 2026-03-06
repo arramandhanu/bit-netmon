@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useMemo } from 'react';
+import Image from 'next/image';
 import {
     LayoutDashboard,
     Server,
@@ -99,13 +100,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
             {/* Logo */}
             <div className="flex h-16 items-center gap-3 px-4 border-b border-border/50">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg gradient-primary">
-                    <Activity className="h-5 w-5 text-white" />
-                </div>
+                <Image src="/images/bit-favicon.png" alt="BIT" width={36} height={36} className="shrink-0 rounded-lg" />
                 {!collapsed && (
                     <div className="overflow-hidden">
                         <h1 className="text-lg font-bold tracking-tight">NetMon</h1>
-                        <p className="text-[10px] text-muted-foreground leading-none">Network Monitoring</p>
+                        <p className="text-[10px] text-muted-foreground leading-none">by BIT</p>
                     </div>
                 )}
             </div>
