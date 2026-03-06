@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useDashboard } from '@/hooks/use-dashboard';
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
+import { MetricCard } from '@/components/ui/metric-card';
 
 export default function DashboardPage() {
     const { data, loading, error, refetch } = useDashboard();
@@ -46,37 +47,36 @@ export default function DashboardPage() {
         <div className="space-y-6">
             {/* KPI Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <KpiCard
+                <MetricCard
                     label="Total Devices"
                     value={data.totalDevices.toLocaleString()}
                     icon={Server}
-                    gradient="from-blue-600 to-blue-400"
-                    iconColor="text-blue-400"
+                    iconBg="bg-blue-100"
+                    iconColor="text-blue-600"
                     detail={`${data.devicesUp} up · ${data.devicesDown} down`}
                 />
-                <KpiCard
+                <MetricCard
                     label="Devices Online"
                     value={data.devicesUp.toLocaleString()}
                     icon={CheckCircle2}
-                    gradient="from-emerald-600 to-emerald-400"
-                    iconColor="text-emerald-400"
+                    iconBg="bg-emerald-100"
+                    iconColor="text-emerald-600"
                     detail={`${data.totalDevices > 0 ? ((data.devicesUp / data.totalDevices) * 100).toFixed(1) : 0}% uptime`}
                 />
-                <KpiCard
+                <MetricCard
                     label="Devices Offline"
                     value={data.devicesDown.toLocaleString()}
                     icon={XCircle}
-                    gradient="from-red-600 to-red-400"
-                    iconColor="text-red-400"
+                    iconBg="bg-red-100"
+                    iconColor="text-red-600"
                     detail={data.devicesDown > 0 ? 'Requires attention' : 'All clear'}
-                    alert={data.devicesDown > 0}
                 />
-                <KpiCard
+                <MetricCard
                     label="Avg CPU / Memory"
                     value={`${data.avgCpu}% / ${data.avgMemory}%`}
                     icon={Activity}
-                    gradient="from-purple-600 to-purple-400"
-                    iconColor="text-purple-400"
+                    iconBg="bg-purple-100"
+                    iconColor="text-purple-600"
                     detail="Across all devices"
                 />
             </div>
@@ -84,8 +84,8 @@ export default function DashboardPage() {
             {/* Two columns: alerts + top CPU */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Recent Alerts */}
-                <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
-                    <div className="flex items-center justify-between p-5 border-b border-border/50">
+                <div className="rounded-xl border-2 border-gray-200 bg-white overflow-hidden">
+                    <div className="flex items-center justify-between p-5 border-b border-gray-200">
                         <div className="flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-amber-400" />
                             <h2 className="font-semibold">Issues Detected</h2>
@@ -119,8 +119,8 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Top CPU Usage */}
-                <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
-                    <div className="flex items-center justify-between p-5 border-b border-border/50">
+                <div className="rounded-xl border-2 border-gray-200 bg-white overflow-hidden">
+                    <div className="flex items-center justify-between p-5 border-b border-gray-200">
                         <div className="flex items-center gap-2">
                             <Cpu className="h-4 w-4 text-blue-400" />
                             <h2 className="font-semibold">Top CPU Usage</h2>
@@ -142,7 +142,7 @@ export default function DashboardPage() {
                                         <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
                                             <div
                                                 className={`h-full rounded-full ${(device.cpu_utilization || 0) > 80 ? 'bg-red-500' :
-                                                        (device.cpu_utilization || 0) > 60 ? 'bg-amber-500' : 'bg-emerald-500'
+                                                    (device.cpu_utilization || 0) > 60 ? 'bg-amber-500' : 'bg-emerald-500'
                                                     }`}
                                                 style={{ width: `${device.cpu_utilization || 0}%` }}
                                             />
@@ -161,38 +161,3 @@ export default function DashboardPage() {
     );
 }
 
-/* ─── KPI Card ───────────────────────────────────────────── */
-
-function KpiCard({
-    label,
-    value,
-    icon: Icon,
-    gradient,
-    iconColor,
-    detail,
-    alert = false,
-}: {
-    label: string;
-    value: string;
-    icon: React.ElementType;
-    gradient: string;
-    iconColor: string;
-    detail: string;
-    alert?: boolean;
-}) {
-    return (
-        <div className="group relative overflow-hidden rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm p-5 transition-all hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.01]">
-            <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-[0.03] transition-opacity`} />
-            <div className="relative flex items-center justify-between mb-3">
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${gradient} bg-opacity-10`}>
-                    <Icon className={`h-[18px] w-[18px] ${iconColor}`} />
-                </div>
-            </div>
-            <p className={`relative text-2xl font-bold tracking-tight ${alert ? 'text-red-400' : ''}`}>
-                {value}
-            </p>
-            <p className="relative text-xs text-muted-foreground mt-1">{detail}</p>
-        </div>
-    );
-}

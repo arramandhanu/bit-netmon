@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertTriangle, Lock, Eye, Clock, Globe, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { MetricCard } from '@/components/ui/metric-card';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { useAuditLogs, useSecurityStats, AuditLogEntry } from '@/hooks/use-admin';
+import { getStoredUser } from '@/hooks/use-auth';
 
 /* ─── Helper: format relative time ──────────────────────── */
 
@@ -23,10 +25,19 @@ function timeAgo(dateStr: string): string {
 /* ─── Component ──────────────────────────────────────────── */
 
 export default function SecurityPage() {
+    const router = useRouter();
+    const currentUser = getStoredUser();
+    const isAdmin = currentUser?.role === 'admin';
     const [page, setPage] = useState(1);
     const [actionFilter, setActionFilter] = useState<string | undefined>(undefined);
     const { logs, meta, loading: logsLoading } = useAuditLogs({ page, limit: 25, action: actionFilter });
     const { stats, loading: statsLoading } = useSecurityStats();
+
+    useEffect(() => {
+        if (!isAdmin) router.replace('/dashboard');
+    }, [isAdmin, router]);
+
+    if (!isAdmin) return null;
 
     const logColumns: Column<AuditLogEntry>[] = [
         {
@@ -128,8 +139,8 @@ export default function SecurityPage() {
                         key={f.label}
                         onClick={() => { setActionFilter(f.value); setPage(1); }}
                         className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${actionFilter === f.value
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-card border border-border text-muted-foreground hover:text-foreground'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-card border border-border text-muted-foreground hover:text-foreground'
                             }`}
                     >
                         {f.label}

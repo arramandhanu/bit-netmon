@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import {
     CreateTicketDto, UpdateTicketDto, TicketQueryDto,
     CreateTicketCommentDto, AssignTicketDto,
@@ -9,13 +10,26 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class TicketsService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly settings: SettingsService,
+    ) { }
 
     // ─── Ticket Number Generator ────────────────────────
 
     private async generateTicketNumber(): Promise<string> {
-        const count = await this.prisma.ticket.count();
-        return `TK-${String(count + 1).padStart(4, '0')}`;
+        // Use MAX(id) to get the next sequence — deletion-safe
+        const last = await this.prisma.ticket.findFirst({
+            orderBy: { id: 'desc' },
+            select: { id: true },
+        });
+        const nextSeq = (last?.id ?? 0) + 1;
+
+        // Read prefix live from settings (with fallback)
+        const prefix = await this.settings.getString('ticket.prefix', 'TKT-');
+        // Ensure prefix ends with hyphen if user forgot to add one
+        const normalizedPrefix = prefix.endsWith('-') ? prefix : `${prefix}-`;
+        return `${normalizedPrefix}${String(nextSeq).padStart(4, '0')}`;
     }
 
     // ─── Create ─────────────────────────────────────────

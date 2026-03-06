@@ -57,7 +57,7 @@ async function bootstrap() {
     app.enableCors({
         origin: nodeEnv === 'production'
             ? ['https://netmon.yourdomain.com']
-            : ['http://localhost:3001', 'http://localhost:3000'],
+            : true,
         credentials: true,
     });
 
@@ -91,8 +91,8 @@ async function bootstrap() {
     // ─── Graceful Shutdown ──────────────────────────
     app.enableShutdownHooks();
 
-    await app.listen(port);
-    logger.log(`NetMon API running on http://localhost:${port} [${nodeEnv}]`);
+    await app.listen(port, '0.0.0.0');
+    logger.log(`NetMon API running on http://0.0.0.0:${port} [${nodeEnv}]`);
 }
 
 bootstrap();

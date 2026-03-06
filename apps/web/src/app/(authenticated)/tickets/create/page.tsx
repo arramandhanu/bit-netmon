@@ -417,7 +417,7 @@ export default function CreateTicketPage() {
                         <button
                             onClick={handleSubmit}
                             disabled={submitting}
-                            className="flex-1 px-5 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white font-semibold shadow-lg shadow-cyan-500/20 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                            className="flex-1 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md shadow-blue-600/20 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98]"
                         >
                             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                             Submit Ticket

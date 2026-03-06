@@ -451,7 +451,7 @@ export default function DeviceDetailPage() {
                 <div className="flex flex-wrap gap-2">
                     <button
                         onClick={handlePollNow}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold text-sm hover:bg-blue-600 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-colors"
                     >
                         <RefreshCw className="h-4 w-4" />
                         Poll Now

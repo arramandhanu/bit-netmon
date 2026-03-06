@@ -48,6 +48,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { createDevice } from '@/hooks/use-devices';
 import { api } from '@/lib/api-client';
 import type { DeviceMetricRow } from '@/hooks/use-metrics';
+import { MetricCard } from '@/components/ui/metric-card';
 
 /* ─── Helpers ────────────────────────────────────────────── */
 
@@ -291,54 +292,7 @@ function LastSeenPulse({ status, lastPolledAt }: { status: string; lastPolledAt:
     );
 }
 
-/* ─── Status Card ────────────────────────────────────────── */
 
-function StatusCard({
-    label,
-    value,
-    icon: Icon,
-    color,
-    active,
-    onClick,
-    subtitle,
-}: {
-    label: string;
-    value: number;
-    icon: React.ElementType;
-    color: string;
-    active: boolean;
-    onClick: () => void;
-    subtitle?: string;
-}) {
-    const colorMap: Record<string, { bg: string; border: string; icon: string; text: string }> = {
-        blue: { bg: 'bg-blue-50', border: 'border-blue-200', icon: 'text-blue-500', text: 'text-blue-700' },
-        green: { bg: 'bg-emerald-50', border: 'border-emerald-200', icon: 'text-emerald-500', text: 'text-emerald-700' },
-        red: { bg: 'bg-red-50', border: 'border-red-200', icon: 'text-red-500', text: 'text-red-700' },
-        amber: { bg: 'bg-amber-50', border: 'border-amber-200', icon: 'text-amber-500', text: 'text-amber-700' },
-    };
-    const c = colorMap[color] || colorMap.blue;
-
-    return (
-        <button
-            onClick={onClick}
-            className={`
-                rounded-xl border p-4 text-left transition-all w-full
-                ${active ? `${c.bg} ${c.border} shadow-sm ring-1 ring-${color}-300` : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'}
-            `}
-        >
-            <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</span>
-                <div className={`rounded-lg p-1.5 ${active ? c.bg : 'bg-gray-50'}`}>
-                    <Icon className={`h-4 w-4 ${active ? c.icon : 'text-gray-400'}`} />
-                </div>
-            </div>
-            <p className={`text-2xl font-bold ${active ? c.text : 'text-gray-900'}`}>{value}</p>
-            {subtitle && (
-                <p className={`text-xs mt-0.5 ${active ? c.icon : 'text-gray-400'}`}>{subtitle}</p>
-            )}
-        </button>
-    );
-}
 
 /* ─── Filter Dropdown ────────────────────────────────────── */
 
@@ -978,36 +932,40 @@ export default function DevicesPage() {
 
             {/* Status Cards — clickable filters */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <StatusCard
+                <MetricCard
                     label="Total Devices"
                     value={stats.total}
                     icon={Server}
-                    color="blue"
+                    iconBg="bg-blue-100"
+                    iconColor="text-blue-600"
                     active={statusFilter === ''}
                     onClick={() => handleStatusFilter('')}
                 />
-                <StatusCard
+                <MetricCard
                     label="Online"
                     value={stats.up}
                     icon={Wifi}
-                    color="green"
+                    iconBg="bg-emerald-100"
+                    iconColor="text-emerald-600"
                     active={statusFilter === 'up'}
                     onClick={() => handleStatusFilter('up')}
-                    subtitle={`↑ ${uptimePct}% uptime`}
+                    detail={`↑ ${uptimePct}% uptime`}
                 />
-                <StatusCard
+                <MetricCard
                     label="Offline"
                     value={stats.down}
                     icon={WifiOff}
-                    color="red"
+                    iconBg="bg-red-100"
+                    iconColor="text-red-600"
                     active={statusFilter === 'down'}
                     onClick={() => handleStatusFilter('down')}
                 />
-                <StatusCard
+                <MetricCard
                     label="Unknown"
                     value={stats.unknown}
                     icon={AlertTriangle}
-                    color="amber"
+                    iconBg="bg-amber-100"
+                    iconColor="text-amber-600"
                     active={statusFilter === 'unknown'}
                     onClick={() => handleStatusFilter('unknown')}
                 />

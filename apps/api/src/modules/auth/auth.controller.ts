@@ -27,7 +27,7 @@ export class AuthController {
     @Post('register')
     @ApiOperation({ summary: 'Register a new user account' })
     register(@Body() dto: RegisterDto) {
-        return this.authService.register(dto.username, dto.email, dto.password);
+        return this.authService.register(dto.username, dto.email, dto.password, dto.role);
     }
 
     @Post('login')

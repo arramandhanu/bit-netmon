@@ -104,7 +104,7 @@ export default function DiscoveryPage() {
                     <button
                         onClick={handleScan}
                         disabled={scanning}
-                        className="flex items-center gap-2 rounded-lg gradient-primary px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary/25 hover:opacity-90 disabled:opacity-50 transition-all"
+                        className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-50 transition-all"
                     >
                         {scanning ? (
                             <>

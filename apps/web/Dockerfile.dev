@@ -27,6 +27,7 @@ COPY packages/shared/ ./packages/shared/
 # Stage 2a: Development (hot-reload)
 # ════════════════════════════════════════════════════════
 FROM base AS development
+ENV HOSTNAME="0.0.0.0"
 EXPOSE 3001
 CMD ["npm", "run", "dev", "-w", "apps/web"]
 

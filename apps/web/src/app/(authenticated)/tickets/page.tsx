@@ -12,6 +12,7 @@ import {
 import { useTickets, useTicketStats, deleteTicket, updateTicket } from '@/hooks/use-tickets';
 import type { Ticket as TicketType } from '@/hooks/use-tickets';
 import { getStoredUser } from '@/hooks/use-auth';
+import { MetricCard } from '@/components/ui/metric-card';
 
 /* ─── Status / Priority Configs ─────────────────────────── */
 
@@ -182,7 +183,7 @@ export default function TicketsPage() {
                 </div>
                 <Link
                     href="/tickets/create"
-                    className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-95"
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md shadow-blue-600/20 transition-all hover:bg-blue-700 active:scale-[0.98]"
                 >
                     <Plus className="h-4 w-4" />
                     Create New Ticket
@@ -191,36 +192,13 @@ export default function TicketsPage() {
 
             {/* ─── Stat Cards (clickable filters) ─────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                {[
-                    { key: '', label: 'Total', count: stats?.total ?? 0, icon: Ticket, borderColor: 'border-l-primary/60', iconBg: 'bg-primary/10', iconText: 'text-primary' },
-                    { key: 'open', label: 'Open', count: stats?.open ?? 0, icon: Inbox, borderColor: 'border-l-blue-400', iconBg: 'bg-blue-50', iconText: 'text-blue-500' },
-                    { key: 'in_progress', label: 'In Progress', count: stats?.inProgress ?? 0, icon: Clock, borderColor: 'border-l-orange-400', iconBg: 'bg-orange-50', iconText: 'text-orange-500' },
-                    { key: 'escalated', label: 'Escalated', count: stats?.escalated ?? 0, icon: ArrowUpRight, borderColor: 'border-l-rose-500', iconBg: 'bg-rose-50', iconText: 'text-rose-500' },
-                    { key: 'on_hold', label: 'On Hold', count: stats?.onHold ?? 0, icon: PauseCircle, borderColor: 'border-l-purple-400', iconBg: 'bg-purple-50', iconText: 'text-purple-500' },
-                    { key: 'resolved', label: 'Resolved', count: stats?.resolved ?? 0, icon: CheckCircle2, borderColor: 'border-l-emerald-400', iconBg: 'bg-emerald-50', iconText: 'text-emerald-500' },
-                    { key: 'closed', label: 'Closed', count: stats?.closed ?? 0, icon: Lock, borderColor: 'border-l-slate-400', iconBg: 'bg-slate-50', iconText: 'text-slate-500' },
-                ].map((card) => {
-                    const isActive = status === card.key;
-                    const CardIcon = card.icon;
-                    return (
-                        <button
-                            key={card.key}
-                            onClick={() => { setStatus(card.key); setPage(1); }}
-                            className={`text-left px-4 py-3 rounded-xl border shadow-sm transition-all border-l-[3px] ${card.borderColor} ${isActive
-                                ? 'ring-2 ring-primary/40 bg-primary/5 shadow-md scale-[1.02]'
-                                : 'bg-card border-border/30 hover:shadow-md hover:-translate-y-0.5'
-                                }`}
-                        >
-                            <div className="flex items-center gap-2.5">
-                                <div className={`p-1.5 ${card.iconBg} ${card.iconText} rounded-md`}><CardIcon className="h-3.5 w-3.5" /></div>
-                                <div>
-                                    <p className="text-xl font-extrabold leading-none">{card.count}</p>
-                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">{card.label}</p>
-                                </div>
-                            </div>
-                        </button>
-                    );
-                })}
+                <MetricCard label="Total" value={stats?.total ?? 0} icon={Ticket} iconBg="bg-blue-100" iconColor="text-blue-600" active={status === ''} onClick={() => { setStatus(''); setPage(1); }} />
+                <MetricCard label="Open" value={stats?.open ?? 0} icon={Inbox} iconBg="bg-sky-100" iconColor="text-sky-600" active={status === 'open'} onClick={() => { setStatus('open'); setPage(1); }} />
+                <MetricCard label="In Progress" value={stats?.inProgress ?? 0} icon={Clock} iconBg="bg-orange-100" iconColor="text-orange-600" active={status === 'in_progress'} onClick={() => { setStatus('in_progress'); setPage(1); }} />
+                <MetricCard label="Escalated" value={stats?.escalated ?? 0} icon={ArrowUpRight} iconBg="bg-rose-100" iconColor="text-rose-600" active={status === 'escalated'} onClick={() => { setStatus('escalated'); setPage(1); }} />
+                <MetricCard label="On Hold" value={stats?.onHold ?? 0} icon={PauseCircle} iconBg="bg-purple-100" iconColor="text-purple-600" active={status === 'on_hold'} onClick={() => { setStatus('on_hold'); setPage(1); }} />
+                <MetricCard label="Resolved" value={stats?.resolved ?? 0} icon={CheckCircle2} iconBg="bg-emerald-100" iconColor="text-emerald-600" active={status === 'resolved'} onClick={() => { setStatus('resolved'); setPage(1); }} />
+                <MetricCard label="Closed" value={stats?.closed ?? 0} icon={Lock} iconBg="bg-slate-100" iconColor="text-slate-600" active={status === 'closed'} onClick={() => { setStatus('closed'); setPage(1); }} />
             </div>
 
             {/* ─── Filter Bar + Table ───────────────────────── */}

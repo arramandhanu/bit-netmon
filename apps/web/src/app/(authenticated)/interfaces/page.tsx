@@ -113,11 +113,15 @@ export default function InterfacesPage() {
                     label="Total Interfaces"
                     value={stats.totalInterfaces.toLocaleString()}
                     icon={Activity}
+                    iconBg="bg-blue-100"
+                    iconColor="text-blue-600"
                 />
                 <MetricCard
                     label="Oper Up"
                     value={stats.totalUp.toLocaleString()}
                     icon={Power}
+                    iconBg="bg-emerald-100"
+                    iconColor="text-emerald-600"
                     trend={stats.totalInterfaces > 0 ? `${Math.round((stats.totalUp / stats.totalInterfaces) * 100)}%` : '0%'}
                     trendUp
                 />
@@ -125,11 +129,15 @@ export default function InterfacesPage() {
                     label="Oper Down"
                     value={stats.totalDown.toLocaleString()}
                     icon={PowerOff}
+                    iconBg="bg-red-100"
+                    iconColor="text-red-600"
                 />
                 <MetricCard
                     label="Filtered"
                     value={data.total.toLocaleString()}
                     icon={Gauge}
+                    iconBg="bg-purple-100"
+                    iconColor="text-purple-600"
                 />
             </div>
 

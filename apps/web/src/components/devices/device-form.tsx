@@ -286,7 +286,7 @@ export function DeviceForm({
                     <button
                         onClick={handleValidatedSubmit as any}
                         disabled={saving}
-                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2 disabled:opacity-60"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-md shadow-blue-600/20 transition-colors flex items-center gap-2 disabled:opacity-60"
                     >
                         {saving ? (
                             <>
