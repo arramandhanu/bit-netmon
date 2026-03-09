@@ -632,8 +632,37 @@ setup_application() {
 
     info "Running database migrations..."
     if ! out=$(npm run db:migrate 2>&1); then
-        echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
-        error "Database migration failed."
+        # Check if failure is due to a previously failed migration (Prisma P3009)
+        if echo "$out" | grep -q "P3009"; then
+            warn "Detected a previously failed migration — attempting automatic recovery..."
+            # Extract the failed migration name from the error output
+            local failed_migration
+            failed_migration=$(echo "$out" | grep -oP 'The `\K[^`]+(?=` migration .* failed)' || echo "")
+            if [[ -z "$failed_migration" ]]; then
+                # Fallback: try alternative pattern
+                failed_migration=$(echo "$out" | sed -n 's/.*The `\([^`]*\)` migration .* failed.*/\1/p')
+            fi
+            if [[ -n "$failed_migration" ]]; then
+                info "Resolving failed migration: ${failed_migration}..."
+                if npx prisma migrate resolve --rolled-back "$failed_migration" --schema=packages/database/prisma/schema.prisma 2>&1; then
+                    log "Migration '${failed_migration}' marked as rolled-back"
+                    info "Retrying database migrations..."
+                    if ! out=$(npm run db:migrate 2>&1); then
+                        echo -e "\n  ${RED}Failed to run database migrations after recovery. Output:${NC}\n$out\n"
+                        error "Database migration failed."
+                    fi
+                else
+                    echo -e "\n  ${RED}Failed to resolve migration. Output:${NC}\n$out\n"
+                    error "Database migration failed. Run manually: npx prisma migrate resolve --rolled-back ${failed_migration} --schema=packages/database/prisma/schema.prisma"
+                fi
+            else
+                echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
+                error "Database migration failed. A previous migration failed — resolve it manually with: npx prisma migrate resolve --rolled-back <migration_name> --schema=packages/database/prisma/schema.prisma"
+            fi
+        else
+            echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
+            error "Database migration failed."
+        fi
     fi
     log "Database migrations applied"
 
