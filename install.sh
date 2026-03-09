@@ -182,13 +182,7 @@ preflight_checks() {
 
     if [[ ${#port_conflicts[@]} -gt 0 ]]; then
         warn "Ports in use: ${port_conflicts[*]}"
-        if [[ "$UNATTENDED" == "false" ]]; then
-            echo "  Continue anyway? [Y/n]"
-            read -r response
-            if [[ "${response,,}" == "n" ]]; then
-                error "Installation cancelled"
-            fi
-        fi
+        warn "Since this might be a re-installation or upgrade, continuing anyway..."
     else
         log "All required ports available ✓"
     fi
@@ -754,6 +748,11 @@ setup_application() {
     fi
     log "Prisma client generated"
 
+    # Forcefully remove the old timescaledb migration folder if it exists.
+    # We moved this to 00002_timescaledb_setup. If the folder remains (e.g., from
+    # a git pull leaving untracked files), Prisma will fail with P3015.
+    rm -rf packages/database/prisma/migrations/timescaledb
+
     local db_name="${POSTGRES_DB:-netmon}"
     local db_user="${POSTGRES_USER:-netmon}"
     local db_pass="${GENERATED_DB_PASS:-${POSTGRES_PASSWORD:-}}"
@@ -793,6 +792,33 @@ setup_application() {
         fi
     else
         log "Fresh database — no migration history yet"
+    fi
+
+    # ── Database Baselining ──────────────────────────────
+    # If the database already has our tables (e.g. from an old install)
+    # but the migration history is empty/missing, Prisma will throw P3005.
+    # We must mark 00001_init as applied BEFORE running migrate.
+    local needs_baseline=""
+    needs_baseline=$(eval "$run_psql -tAc \"
+        SELECT count(*) FROM information_schema.tables
+        WHERE table_name = 'users'
+    \"" 2>/dev/null || echo "0")
+
+    local history_count=""
+    if [[ "$has_failed" == "1" ]]; then
+        history_count=$(eval "$run_psql -tAc \"SELECT count(*) FROM _prisma_migrations\"" 2>/dev/null || echo "0")
+    else
+        history_count="0"
+    fi
+
+    if [[ "$needs_baseline" == "1" ]] && [[ "$history_count" == "0" ]]; then
+        info "Database has existing tables but no migration history."
+        info "Baselining 00001_init..."
+        if npx prisma migrate resolve --applied 00001_init --schema=packages/database/prisma/schema.prisma 2>&1; then
+            log "Baselined 00001_init successfully"
+        else
+            warn "Failed to baseline 00001_init"
+        fi
     fi
 
     local has_wrong_cols=""
@@ -853,13 +879,24 @@ setup_application() {
 
         if echo "$out" | grep -q "P3018"; then
             warn "Migration apply error (attempt ${migrate_attempts}/${migrate_max})..."
+            echo -e "  ${DIM}Error details:\n$out${NC}"
             local apply_failed
             apply_failed=$(echo "$out" | sed -n 's/.*Migration name: \(.*\)/\1/p' | tr -d '[:space:]')
             if [[ -n "$apply_failed" ]]; then
-                info "Resolving: ${apply_failed}..."
-                if npx prisma migrate resolve --rolled-back "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
-                    log "Marked '${apply_failed}' as rolled-back"
-                    continue
+                # Special case: If 00001_init fails because tables already exist from an older
+                # partial install, we mark it as APPLIED so we can just move forward.
+                if [[ "$apply_failed" == "00001_init" ]] && echo "$out" | grep -qi "already exists"; then
+                    info "Tables already exist from previous install — marking 00001_init as applied..."
+                    if npx prisma migrate resolve --applied "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
+                        log "Marked '${apply_failed}' as applied"
+                        continue
+                    fi
+                else
+                    info "Resolving: ${apply_failed}..."
+                    if npx prisma migrate resolve --rolled-back "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
+                        log "Marked '${apply_failed}' as rolled-back"
+                        continue
+                    fi
                 fi
             fi
         fi
