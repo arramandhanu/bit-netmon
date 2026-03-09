@@ -135,9 +135,18 @@ spinner() {
 run_with_spinner() {
     local msg="$1"
     shift
-    "$@" &>/dev/null &
+    local tmp_log
+    tmp_log=$(mktemp)
+    "$@" >"$tmp_log" 2>&1 &
     local pid=$!
-    spinner "$pid" "$msg"
+    if ! spinner "$pid" "$msg"; then
+        echo -e "\n  ${RED}Command failed: $*${NC}"
+        echo -e "  ${DIM}Output log:${NC}"
+        cat "$tmp_log"
+        rm -f "$tmp_log"
+        error "Step failed: $msg"
+    fi
+    rm -f "$tmp_log"
 }
 
 # ─── Pre-flight Checks ────────────────────────────────────
