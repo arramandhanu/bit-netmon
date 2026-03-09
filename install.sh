@@ -662,10 +662,8 @@ setup_database() {
 }
 
 # ─── Environment File ────────────────────────────────────
-
 generate_env() {
     section "Environment Configuration"
-
     local env_file="${INSTALL_DIR}/.env"
     local db_host="127.0.0.1"
     local db_name="${POSTGRES_DB:-netmon}"
@@ -677,23 +675,30 @@ generate_env() {
     local jwt_secret
     local encryption_key
     local api_domain="${API_DOMAIN:-$(detect_local_ip)}"
+    
+    # Generate admin password
+    local admin_password="$(generate_secret 24)"
+    GENERATED_ADMIN_PASS="$admin_password"
 
     jwt_secret="$(generate_secret 64)"
     encryption_key="$(generate_secret 32)"
-
     if [[ -f "$env_file" ]]; then
         warn ".env file already exists — backing up to .env.backup"
         cp "$env_file" "${env_file}.backup.$(date +%s)"
     fi
-
     cat > "$env_file" <<EOF
 # ─── NetMon Environment Configuration ───────────────────
 # Generated on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # ─────────────────────────────────────────────────────────
 
+# App Admin Account (used during seed)
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@\${api_domain}
+ADMIN_PASSWORD=\${admin_password}
+
 # Database
-POSTGRES_USER=${db_user}
-POSTGRES_PASSWORD=${db_pass}
+POSTGRES_USER=\${db_user}
+POSTGRES_PASSWORD=\${db_pass}
 POSTGRES_DB=${db_name}
 POSTGRES_PORT=5432
 DATABASE_URL=postgresql://${db_user}:${db_pass}@${db_host}:5432/${db_name}?schema=public
@@ -1523,7 +1528,9 @@ main() {
     echo "    Web:   http://localhost:${WEB_PORT}"
     echo "    Health: http://localhost:${API_PORT}/health"
     echo ""
-    echo "  Default credentials: admin / admin"
+    echo "  Admin credentials:"
+    echo -e "    Username: ${CYAN}admin${NC}"
+    echo -e "    Password: ${YELLOW}${GENERATED_ADMIN_PASS}${NC}"
     echo ""
     echo "  Manage services:"
     echo "    sudo systemctl status netmon-api netmon-web"
