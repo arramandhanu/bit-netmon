@@ -57,7 +57,7 @@ export class MetricsController {
     @Get('metrics/dashboard')
     @ApiOperation({ summary: 'Get dashboard overview — latest metrics for all devices' })
     getDashboard() {
-        return this.metricsService.getDashboardOverview();
+        return this.metricsService.getExtendedDashboardOverview();
     }
 
     // ─── Polling Controls ───────────────────────────────

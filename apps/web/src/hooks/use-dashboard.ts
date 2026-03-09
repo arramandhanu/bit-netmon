@@ -24,6 +24,18 @@ export interface DashboardData {
     avgCpu: number;
     avgMemory: number;
     topCpuDevices: DeviceMetricSnapshot[];
+
+    // Extended Metrics
+    totalLocations: number;
+    activeLocations: number;
+    totalInterfaces: number;
+    interfacesDown: number;
+    totalAps: number;
+    clientsConnected: number;
+    openTickets: number;
+    recentTickets: any[];
+    recentDiscovery: any[];
+    recentSecurityEvents: any[];
 }
 
 /* ─── Hook ───────────────────────────────────────────────── */
@@ -35,12 +47,14 @@ export function useDashboard(refreshInterval = 30000) {
 
     const fetchDashboard = useCallback(async () => {
         try {
-            const [metricsRes, devicesRes] = await Promise.all([
-                api.get<DeviceMetricSnapshot[]>('/metrics/dashboard'),
+            const [dashboardRes, devicesRes] = await Promise.all([
+                api.get('/metrics/dashboard'),
                 api.get('/devices', { params: { limit: 1 } }), // for total count
             ]);
 
-            const metrics = metricsRes.data;
+            // The API now returns { metrics: [...], totalLocations: ..., ... }
+            const dashboardPayload = dashboardRes.data;
+            const metrics = dashboardPayload.metrics || [];
             const totalDevices = devicesRes.data?.total || devicesRes.data?.data?.length || metrics.length;
 
             const devicesUp = metrics.filter(m => m.device_status === 'up').length;
@@ -72,6 +86,7 @@ export function useDashboard(refreshInterval = 30000) {
                 avgCpu,
                 avgMemory,
                 topCpuDevices,
+                ...dashboardPayload, // Include all the new extended fields
             });
             setError(null);
         } catch (err: any) {

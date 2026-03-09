@@ -55,9 +55,7 @@ async function bootstrap() {
 
     // ─── CORS ───────────────────────────────────────
     app.enableCors({
-        origin: nodeEnv === 'production'
-            ? ['https://netmon.yourdomain.com']
-            : true,
+        origin: true, // Allow dynamically added hostnames & IPs out of the box
         credentials: true,
     });
 
