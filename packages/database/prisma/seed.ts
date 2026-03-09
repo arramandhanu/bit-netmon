@@ -3,6 +3,10 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@netmon.local';
+
 /**
  * Seeds the database with essential data only:
  *   - Default admin user
@@ -15,21 +19,23 @@ async function main() {
 
     // ─── Default Admin User ───────────────────────────
     const adminExists = await prisma.user.findUnique({
-        where: { username: 'admin' },
+        where: { username: ADMIN_USERNAME },
     });
 
     if (!adminExists) {
         await prisma.user.create({
             data: {
-                username: 'admin',
-                email: 'admin@netmon.local',
-                passwordHash: await bcrypt.hash('admin', 12),
+                username: ADMIN_USERNAME,
+                email: ADMIN_EMAIL,
+                passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 12),
                 displayName: 'Administrator',
                 role: UserRole.admin,
                 isActive: true,
             },
         });
-        console.log('  ✓ Created admin user (admin / admin)');
+        console.log(`  ✓ Created admin user (${ADMIN_USERNAME} / ${ADMIN_PASSWORD})`);
+    } else {
+        console.log(`  ✓ Admin user already exists (${ADMIN_USERNAME})`);
     }
 
     // ─── Default System Settings ────────────────────

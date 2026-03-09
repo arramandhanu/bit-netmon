@@ -681,8 +681,8 @@ generate_env() {
         info "Set API_DOMAIN=your-server-ip or domain for network access"
     fi
     
-    # Generate admin password
-    local admin_password="$(generate_secret 24)"
+    # Generate admin password (default to 'admin' for easy access)
+    local admin_password="${ADMIN_PASSWORD:-admin}"
     GENERATED_ADMIN_PASS="$admin_password"
 
     jwt_secret="$(generate_secret 64)"
@@ -698,7 +698,7 @@ generate_env() {
 
 # App Admin Account (used during seed)
 ADMIN_USERNAME=admin
-ADMIN_EMAIL=admin@${api_domain}
+ADMIN_EMAIL=admin@${api_domain:-localhost}
 ADMIN_PASSWORD=${admin_password}
 
 # Database
