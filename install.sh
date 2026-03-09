@@ -619,10 +619,12 @@ setup_application() {
 
     cd "$INSTALL_DIR"
 
+    # ── 1. Install npm dependencies ──────────────────────
     info "Installing npm dependencies..."
     run_with_spinner "Installing npm dependencies..." npm install --production=false
     log "npm dependencies installed"
 
+    # ── 2. Generate Prisma client ────────────────────────
     info "Generating Prisma client..."
     if ! out=$(npm run db:generate 2>&1); then
         echo -e "\n  ${RED}Failed to generate Prisma client. Output:${NC}\n$out\n"
@@ -630,42 +632,131 @@ setup_application() {
     fi
     log "Prisma client generated"
 
+    # ── 3. Clean stale migration state ───────────────────
+    # If a previous install attempt left failed/rolled-back entries in
+    # _prisma_migrations, drop the tracking table so Prisma can start
+    # fresh. This is safe because our migration SQL is fully idempotent
+    # (IF NOT EXISTS / IF NOT EXISTS / DO $$ blocks).
+    local db_name="${POSTGRES_DB:-netmon}"
+    local db_user="${POSTGRES_USER:-netmon}"
+    local db_pass="${GENERATED_DB_PASS:-${POSTGRES_PASSWORD:-}}"
+
+    info "Checking for stale migration state..."
+    local run_psql=""
+    case "$OS" in
+        macos)
+            run_psql="psql -d $db_name"
+            ;;
+        *)
+            run_psql="PGPASSWORD=$db_pass psql -U $db_user -h 127.0.0.1 -d $db_name"
+            ;;
+    esac
+
+    # Check if _prisma_migrations exists and has any failed/rolled-back entries
+    local has_failed=""
+    has_failed=$(eval "$run_psql -tAc \"
+        SELECT count(*) FROM information_schema.tables
+        WHERE table_name = '_prisma_migrations'
+    \"" 2>/dev/null || echo "0")
+
+    if [[ "$has_failed" == "1" ]]; then
+        local bad_rows
+        bad_rows=$(eval "$run_psql -tAc \"
+            SELECT count(*) FROM _prisma_migrations
+            WHERE finished_at IS NULL
+               OR rolled_back_at IS NOT NULL
+               OR logs IS NOT NULL
+        \"" 2>/dev/null || echo "0")
+
+        if [[ "$bad_rows" -gt 0 ]]; then
+            warn "Found ${bad_rows} failed/stale migration entries — cleaning up..."
+            eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations;'" 2>/dev/null || true
+            log "Stale migration state cleared"
+        else
+            log "Migration state is clean"
+        fi
+    else
+        log "Fresh database — no migration history yet"
+    fi
+
+    # Drop old hypertable objects with wrong column names if they exist
+    # from a previous broken 00002_timescaledb_setup migration
+    local has_wrong_cols=""
+    has_wrong_cols=$(eval "$run_psql -tAc \"
+        SELECT count(*) FROM information_schema.columns
+        WHERE table_name = 'device_metrics' AND column_name = 'cpu_usage'
+    \"" 2>/dev/null || echo "0")
+
+    if [[ "$has_wrong_cols" == "1" ]]; then
+        warn "Found device_metrics with wrong column names — dropping old tables..."
+        eval "$run_psql -c '
+            DROP MATERIALIZED VIEW IF EXISTS device_metrics_hourly CASCADE;
+            DROP MATERIALIZED VIEW IF EXISTS device_metrics_daily CASCADE;
+            DROP MATERIALIZED VIEW IF EXISTS interface_metrics_hourly CASCADE;
+            DROP MATERIALIZED VIEW IF EXISTS interface_metrics_daily CASCADE;
+            DROP TABLE IF EXISTS device_metrics CASCADE;
+            DROP TABLE IF EXISTS interface_metrics CASCADE;
+            DROP TABLE IF EXISTS wireless_metrics CASCADE;
+        '" 2>/dev/null || true
+        log "Old hypertable objects removed"
+    fi
+
+    # ── 4. Run database migrations ───────────────────────
     info "Running database migrations..."
-    if ! out=$(npm run db:migrate 2>&1); then
-        # Check if failure is due to a previously failed migration (Prisma P3009)
+    local migrate_attempts=0
+    local migrate_max=5
+    local migrate_ok=false
+
+    while [[ "$migrate_attempts" -lt "$migrate_max" ]]; do
+        migrate_attempts=$((migrate_attempts + 1))
+
+        if out=$(npm run db:migrate 2>&1); then
+            migrate_ok=true
+            break
+        fi
+
+        # P3009: a previously failed migration is blocking new ones
         if echo "$out" | grep -q "P3009"; then
-            warn "Detected a previously failed migration — attempting automatic recovery..."
-            # Extract the failed migration name from the error output
+            warn "Failed migration detected (attempt ${migrate_attempts}/${migrate_max})..."
             local failed_migration
-            failed_migration=$(echo "$out" | grep -oP 'The `\K[^`]+(?=` migration .* failed)' || echo "")
+            failed_migration=$(echo "$out" | grep -oP 'The `\K[^`]+(?=` migration .* failed)' 2>/dev/null || echo "")
             if [[ -z "$failed_migration" ]]; then
-                # Fallback: try alternative pattern
                 failed_migration=$(echo "$out" | sed -n 's/.*The `\([^`]*\)` migration .* failed.*/\1/p')
             fi
             if [[ -n "$failed_migration" ]]; then
-                info "Resolving failed migration: ${failed_migration}..."
+                info "Resolving: ${failed_migration}..."
                 if npx prisma migrate resolve --rolled-back "$failed_migration" --schema=packages/database/prisma/schema.prisma 2>&1; then
-                    log "Migration '${failed_migration}' marked as rolled-back"
-                    info "Retrying database migrations..."
-                    if ! out=$(npm run db:migrate 2>&1); then
-                        echo -e "\n  ${RED}Failed to run database migrations after recovery. Output:${NC}\n$out\n"
-                        error "Database migration failed."
-                    fi
-                else
-                    echo -e "\n  ${RED}Failed to resolve migration. Output:${NC}\n$out\n"
-                    error "Database migration failed. Run manually: npx prisma migrate resolve --rolled-back ${failed_migration} --schema=packages/database/prisma/schema.prisma"
+                    log "Marked '${failed_migration}' as rolled-back"
+                    continue
                 fi
-            else
-                echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
-                error "Database migration failed. A previous migration failed — resolve it manually with: npx prisma migrate resolve --rolled-back <migration_name> --schema=packages/database/prisma/schema.prisma"
             fi
-        else
-            echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
-            error "Database migration failed."
         fi
+
+        # P3018: a migration failed to apply
+        if echo "$out" | grep -q "P3018"; then
+            warn "Migration apply error (attempt ${migrate_attempts}/${migrate_max})..."
+            local apply_failed
+            apply_failed=$(echo "$out" | sed -n 's/.*Migration name: \(.*\)/\1/p' | tr -d '[:space:]')
+            if [[ -n "$apply_failed" ]]; then
+                info "Resolving: ${apply_failed}..."
+                if npx prisma migrate resolve --rolled-back "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
+                    log "Marked '${apply_failed}' as rolled-back"
+                    continue
+                fi
+            fi
+        fi
+
+        # Unknown or unrecoverable error
+        echo -e "\n  ${RED}Database migration failed. Output:${NC}\n$out\n"
+        error "Database migration failed after ${migrate_attempts} attempt(s)."
+    done
+
+    if [[ "$migrate_ok" != "true" ]]; then
+        error "Database migration failed after ${migrate_max} attempts."
     fi
     log "Database migrations applied"
 
+    # ── 5. Seed database ─────────────────────────────────
     info "Seeding database with default admin user..."
     if ! out=$(npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1); then
         warn "Seeding skipped or failed — you may need to create an admin user manually."
@@ -674,6 +765,7 @@ setup_application() {
         log "Database seeded (default: admin / admin)"
     fi
 
+    # ── 6. Build production assets ───────────────────────
     info "Building production assets (this may take a few minutes)..."
     run_with_spinner "Building production assets..." npm run build
     log "Production build complete"
