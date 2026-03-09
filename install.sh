@@ -741,7 +741,8 @@ NEXT_PUBLIC_WS_URL=http://${api_domain}:${API_PORT}
 # SMTP_PASS=
 EOF
 
-    chmod 600 "$env_file"
+    chmod 640 "$env_file"
+    $SUDO_CMD chown "${SUDO_USER:-root}:${SUDO_USER:-root}" "$env_file" 2>/dev/null || true
     log ".env file generated at ${env_file}"
     info "Database password: ${db_pass}"
     info "Redis password:    ${redis_pass}"
