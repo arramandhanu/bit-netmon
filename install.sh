@@ -59,13 +59,21 @@ GENERATED_REDIS_PASS=""
 POSTGRES_SERVICE=""
 REDIS_SERVICE=""
 
+# ─── Root Check ───────────────────────────────────────────
+
+check_root() {
+    if [[ "$OS" != "macos" ]] && [[ "$EUID" -ne 0 ]]; then
+        error "This script must be run as root on Linux. Use: sudo ./install.sh"
+    fi
+}
+
 # ─── Helpers ─────────────────────────────────────────────
 
 banner() {
     echo ""
     echo -e "${CYAN}${BOLD}"
     echo "  ╔═══════════════════════════════════════════════════╗"
-    echo "  ║     NetMon Refined Installation Script            ║"
+    echo "  ║     NetMon Installation Script                   ║"
     echo "  ║        Network Monitoring Platform               ║"
     echo "  ╚═══════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -1457,23 +1465,16 @@ main() {
 }
 
 MODE=""
-check_root() {
-    if [[ "$OS" != "macos" ]] && [[ "$EUID" -ne 0 ]]; then
-        error "This script must be run as root on Linux. Use: sudo ./install.sh"
-    fi
-}
-
-[[ "$OSTYPE" == "darwin"* ]] && OS="macos" || true
-
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    PKG_MANAGER="brew"
-    SUDO_CMD=""
-elif [[ -f /etc/os-release ]]; then
+detect_os_early() {
+    [[ "$OSTYPE" == "darwin"* ]] && OS="macos" && return 0
+    [[ -f /etc/os-release ]] || return 1
     . /etc/os-release
     case "$ID" in
         ubuntu|debian|pop|linuxmint) OS="debian"; PKG_MANAGER="apt"; SUDO_CMD="sudo" ;;
         rhel|centos|rocky|almalinux|fedora) OS="rhel"; PKG_MANAGER="dnf"; SUDO_CMD="sudo" ;;
+        *) return 1 ;;
     esac
-fi
+}
 
+detect_os_early || true
 main "$@"
