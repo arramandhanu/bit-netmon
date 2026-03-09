@@ -85,7 +85,7 @@ warn()    { echo -e "  ${YELLOW}⚠${NC} $1"; }
 error()   { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 info()    { echo -e "  ${BLUE}→${NC} $1"; }
 section() { echo ""; echo -e "  ${BOLD}━━━ $1 ━━━${NC}"; echo ""; }
-verbose() { [[ "$VERBOSE" == "true" ]] && echo -e "  ${DIM}$1${NC}"; }
+verbose() { [[ "$VERBOSE" == "true" ]] && echo -e "  ${DIM}$1${NC}" || true; }
 
 log_to_file() {
     if [[ -n "$LOG_FILE" ]]; then
@@ -211,13 +211,15 @@ detect_services() {
     case "$OS" in
         debian)
             if command_exists systemctl; then
-                if systemctl list-units --type=service | grep -q "postgresql.*\.service"; then
+                if systemctl list-units --type=service | grep -q 'postgresql.*\.service'; then
                     POSTGRES_SERVICE="postgresql"
                 else
                     POSTGRES_SERVICE="postgresql-${PG_VERSION}"
                 fi
-                if systemctl list-units --type=service | grep -q "redis.*\.service"; then
-                    REDIS_SERVICE="redis-server" || REDIS_SERVICE="redis"
+                if systemctl list-units --type=service | grep -q 'redis.*\.service'; then
+                    REDIS_SERVICE="redis-server"
+                else
+                    REDIS_SERVICE="redis"
                 fi
             fi
             ;;
