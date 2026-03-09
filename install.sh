@@ -1472,8 +1472,11 @@ main() {
     log_to_file "Starting NetMon installation"
 
     banner
+    echo "[DEBUG] Starting detect_os..."
     detect_os
+    echo "[DEBUG] detect_os completed, OS=$OS"
     check_root
+    echo "[DEBUG] check_root completed"
 
     if [[ "$MODE" == "nginx" ]]; then
         clone_or_detect_repo
@@ -1482,8 +1485,12 @@ main() {
         exit 0
     fi
 
+    echo "[DEBUG] Starting preflight_checks..."
     preflight_checks
+    echo "[DEBUG] preflight_checks completed"
+    echo "[DEBUG] Starting check_resources..."
     check_resources
+    echo "[DEBUG] check_resources completed"
     install_prerequisites
     clone_or_detect_repo
     detect_services
