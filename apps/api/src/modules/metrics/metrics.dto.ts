@@ -35,3 +35,35 @@ export class MetricsQueryDto {
     @Type(() => Number)
     limit?: number = 100;
 }
+
+export interface DashboardOverviewResponse {
+    deviceId: number;
+    time: string;
+    cpu_utilization: number | null;
+    memory_percent: number | null;
+    response_time_ms: number | null;
+    device_status: string;
+    uptime: number | null;
+}
+
+export interface DashboardData {
+    metrics: DashboardOverviewResponse[];
+    totalDevices: number;
+    devicesUp: number;
+    devicesDown: number;
+    devicesWarning: number;
+    avgCpu: number;
+    avgMemory: number;
+    topCpuDevices: DashboardOverviewResponse[];
+
+    totalLocations: number;
+    activeLocations: number;
+    totalInterfaces: number;
+    interfacesDown: number;
+    totalAps: number;
+    clientsConnected: number;
+    openTickets: number;
+    recentTickets: any[];
+    recentDiscovery: any[];
+    recentSecurityEvents: any[];
+}

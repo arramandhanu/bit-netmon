@@ -22,6 +22,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { api } from '@/lib/api-client';
+import * as echarts from 'echarts';
 
 /* ─── Helpers ────────────────────────────────────────────── */
 
@@ -82,70 +83,68 @@ function MetricChartPanel({ title, icon: Icon, data, unit, color, maxVal, label 
 
     useEffect(() => {
         if (!chartRef.current || !hasData) return;
-        let instance: any = null;
 
-        import('echarts').then((echarts) => {
-            if (!chartRef.current) return;
-            instance = echarts.init(chartRef.current);
+        const instance = echarts.init(chartRef.current);
 
-            instance.setOption({
-                backgroundColor: '#fafafa',
-                animation: false,
-                tooltip: {
-                    trigger: 'axis',
-                    backgroundColor: '#fff',
-                    borderColor: '#d4d4d4',
-                    textStyle: { color: '#1e293b', fontSize: 11 },
-                    valueFormatter: (v: number) => `${Number(v || 0).toFixed(1)}${unit}`,
-                },
-                grid: { left: 45, right: 16, top: 12, bottom: 32 },
-                xAxis: {
-                    type: 'time',
-                    axisLine: { lineStyle: { color: '#999' } },
-                    axisTick: { lineStyle: { color: '#999' } },
-                    axisLabel: {
-                        color: '#555',
-                        fontSize: 10,
-                        formatter: (val: number) => {
-                            const d = new Date(val);
-                            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                            return `${days[d.getDay()]} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                        },
-                    },
-                    splitLine: {
-                        show: true,
-                        lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
+        instance.setOption({
+            backgroundColor: '#fafafa',
+            animation: false,
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: '#fff',
+                borderColor: '#d4d4d4',
+                textStyle: { color: '#1e293b', fontSize: 11 },
+                valueFormatter: (v: number) => `${Number(v || 0).toFixed(1)}${unit}`,
+            },
+            grid: { left: 45, right: 16, top: 12, bottom: 32 },
+            xAxis: {
+                type: 'time',
+                axisLine: { lineStyle: { color: '#999' } },
+                axisTick: { lineStyle: { color: '#999' } },
+                axisLabel: {
+                    color: '#555',
+                    fontSize: 10,
+                    formatter: (val: number) => {
+                        const d = new Date(val);
+                        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                        return `${days[d.getDay()]} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
                     },
                 },
-                yAxis: {
-                    type: 'value',
-                    max: maxVal || undefined,
-                    min: 0,
-                    axisLine: { lineStyle: { color: '#999' } },
-                    axisTick: { lineStyle: { color: '#999' } },
-                    axisLabel: { color: '#555', fontSize: 10, formatter: `{value}` },
-                    splitLine: {
-                        show: true,
-                        lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
-                    },
+                splitLine: {
+                    show: true,
+                    lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
                 },
-                series: [{
-                    type: 'line',
-                    data,
-                    step: false,
-                    smooth: false,
-                    symbol: 'none',
-                    lineStyle: { color, width: 0.5 },
-                    areaStyle: { color, opacity: 0.85 },
-                }],
-            });
-
-            const onResize = () => instance?.resize();
-            window.addEventListener('resize', onResize);
-            return () => window.removeEventListener('resize', onResize);
+            },
+            yAxis: {
+                type: 'value',
+                max: maxVal || undefined,
+                min: 0,
+                axisLine: { lineStyle: { color: '#999' } },
+                axisTick: { lineStyle: { color: '#999' } },
+                axisLabel: { color: '#555', fontSize: 10, formatter: `{value}` },
+                splitLine: {
+                    show: true,
+                    lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
+                },
+            },
+            series: [{
+                type: 'line',
+                data,
+                step: false,
+                smooth: false,
+                symbol: 'none',
+                lineStyle: { color, width: 0.5 },
+                areaStyle: { color, opacity: 0.85 },
+            }],
         });
 
-        return () => { instance?.dispose(); };
+        const onResize = () => instance?.resize();
+        window.addEventListener('resize', onResize);
+
+        return () => {
+            window.removeEventListener('resize', onResize);
+            instance?.dispose();
+        };
     }, [data, unit, color, maxVal, hasData]);
 
     const pct = maxVal ? (latestVal / maxVal) * 100 : 0;
@@ -196,119 +195,194 @@ function InterfaceTrafficPanel({ deviceId, iface, rangeIdx, hours }: {
 
     useEffect(() => {
         if (!chartRef.current || data.length === 0) return;
-        let instance: any = null;
 
-        import('echarts').then((echarts) => {
-            if (!chartRef.current) return;
-            instance = echarts.init(chartRef.current);
+        const instance = echarts.init(chartRef.current);
 
-            const inData = data.map((r: any) => [new Date(r.bucket).getTime(), r.avg_in_bps || 0]);
-            const outData = data.map((r: any) => [new Date(r.bucket).getTime(), r.avg_out_bps || 0]);
+        const inData = data.map((r: any) => [new Date(r.bucket).getTime(), r.avg_in_bps || 0]);
+        const outData = data.map((r: any) => [new Date(r.bucket).getTime(), r.avg_out_bps || 0]);
 
-            instance.setOption({
-                backgroundColor: '#fafafa',
-                animation: false,
-                tooltip: {
-                    trigger: 'axis',
-                    backgroundColor: '#fff',
-                    borderColor: '#d4d4d4',
-                    textStyle: { color: '#1e293b', fontSize: 11 },
-                    valueFormatter: (v: number) => formatBps(v),
-                },
-                legend: { show: false },
-                grid: { left: 55, right: 16, top: 12, bottom: 32 },
-                xAxis: {
-                    type: 'time',
-                    axisLine: { lineStyle: { color: '#999' } },
-                    axisTick: { lineStyle: { color: '#999' } },
-                    axisLabel: {
-                        color: '#555',
-                        fontSize: 10,
-                        formatter: (val: number) => {
-                            const d = new Date(val);
-                            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                            return `${days[d.getDay()]} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                        },
-                    },
-                    splitLine: {
-                        show: true,
-                        lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
+        instance.setOption({
+            backgroundColor: '#fafafa',
+            animation: false,
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: '#fff',
+                borderColor: '#d4d4d4',
+                textStyle: { color: '#1e293b', fontSize: 11 },
+                valueFormatter: (v: number) => formatBps(v),
+            },
+            legend: { show: false },
+            grid: { left: 55, right: 16, top: 12, bottom: 32 },
+            xAxis: {
+                type: 'time',
+                axisLine: { lineStyle: { color: '#999' } },
+                axisTick: { lineStyle: { color: '#999' } },
+                axisLabel: {
+                    color: '#555',
+                    fontSize: 10,
+                    formatter: (val: number) => {
+                        const d = new Date(val);
+                        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                        return `${days[d.getDay()]} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
                     },
                 },
-                yAxis: {
-                    type: 'value',
-                    min: 0,
-                    axisLine: { lineStyle: { color: '#999' } },
-                    axisTick: { lineStyle: { color: '#999' } },
-                    axisLabel: { color: '#555', fontSize: 10, formatter: (v: number) => formatBpsShort(v) },
-                    splitLine: {
-                        show: true,
-                        lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
-                    },
+                splitLine: {
+                    show: true,
+                    lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
                 },
-                series: [
-                    {
-                        name: 'Inbound',
-                        type: 'line',
-                        data: inData,
-                        smooth: false,
-                        symbol: 'none',
-                        lineStyle: { color: '#00cc00', width: 0.5 },
-                        areaStyle: { color: '#00cc00', opacity: 0.7 },
-                    },
-                    {
-                        name: 'Outbound',
-                        type: 'line',
-                        data: outData,
-                        smooth: false,
-                        symbol: 'none',
-                        lineStyle: { color: '#0000ff', width: 0.5 },
-                        areaStyle: { color: '#0000ff', opacity: 0.4 },
-                    },
-                ],
-            });
-
-            const onResize = () => instance?.resize();
-            window.addEventListener('resize', onResize);
-            return () => window.removeEventListener('resize', onResize);
+            },
+            yAxis: {
+                type: 'value',
+                min: 0,
+                axisLine: { lineStyle: { color: '#999' } },
+                axisTick: { lineStyle: { color: '#999' } },
+                axisLabel: { color: '#555', fontSize: 10, formatter: (v: number) => formatBpsShort(v) },
+                splitLine: {
+                    show: true,
+                    lineStyle: { color: '#f0c0c0', type: 'solid', width: 0.5 },
+                },
+            },
+            series: [
+                {
+                    name: 'Inbound',
+                    type: 'line',
+                    data: inData,
+                    smooth: false,
+                    symbol: 'none',
+                    lineStyle: { color: '#00cc00', width: 0.5 },
+                    areaStyle: { color: '#00cc00', opacity: 0.7 },
+                },
+                {
+                    name: 'Outbound',
+                    type: 'line',
+                    data: outData,
+                    smooth: false,
+                    symbol: 'none',
+                    lineStyle: { color: '#0000ff', width: 0.5 },
+                    areaStyle: { color: '#0000ff', opacity: 0.4 },
+                },
+            ],
         });
 
-        return () => { instance?.dispose(); };
+        const onResize = () => instance?.resize();
+        window.addEventListener('resize', onResize);
+
+        return () => {
+            window.removeEventListener('resize', onResize);
+            instance?.dispose();
+        };
     }, [data, hours]);
 
-    // Calculate latest values
+    // Calculate latest and peak values from all data points
     const latest = data.length > 0 ? data[data.length - 1] : null;
     const inBps = latest?.avg_in_bps || 0;
     const outBps = latest?.avg_out_bps || 0;
+    const peakIn = data.reduce((max: number, r: any) => Math.max(max, r.max_in_bps || 0), 0);
+    const peakOut = data.reduce((max: number, r: any) => Math.max(max, r.max_out_bps || 0), 0);
+    const inUtil = latest?.avg_in_util || 0;
+    const outUtil = latest?.avg_out_util || 0;
+    const totalInErrors = data.reduce((sum: number, r: any) => sum + (Number(r.total_in_errors) || 0), 0);
+    const totalOutErrors = data.reduce((sum: number, r: any) => sum + (Number(r.total_out_errors) || 0), 0);
     const hasData = data.length > 0;
     const isUp = iface.ifOperStatus === 'up';
+    const ifaceName = iface.ifName || iface.ifDescr || `Index ${iface.ifIndex}`;
+    const ifaceDesc = iface.ifAlias || iface.ifDescr || '';
+    const linkSpeed = Number(iface.ifHighSpeed || iface.ifSpeed) || 0;
 
     return (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                    <Network className="h-4 w-4 text-blue-500" />
-                    <h3 className="text-sm font-bold text-blue-600">
-                        {iface.ifName || `if${iface.ifIndex}`}
-                        {iface.ifAlias && <span className="text-gray-400 font-normal ml-1">— {iface.ifAlias}</span>}
-                    </h3>
-                    <span className={`ml-1 w-2 h-2 rounded-full ${isUp ? 'bg-green-500' : 'bg-red-500'}`} />
+            {/* Interface Header */}
+            <div className="px-4 py-3 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Network className="h-4 w-4 text-blue-500" />
+                        <h3 className="text-sm font-bold text-blue-600">{ifaceName}</h3>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isUp ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                            {isUp ? 'UP' : 'DOWN'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                        {linkSpeed > 0 && <span className="font-semibold">{formatSpeed(linkSpeed)}</span>}
+                        {iface.ifType && <span>· {iface.ifType}</span>}
+                    </div>
                 </div>
+                {ifaceDesc && <p className="text-xs text-gray-400 mt-0.5 truncate">{ifaceDesc}</p>}
             </div>
+
             {hasData ? (
                 <>
                     <div ref={chartRef} className="h-48 w-full" />
-                    {/* RRD-style traffic legend footer */}
-                    <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-6">
-                        <div className="flex items-center gap-2">
-                            <span className="w-3 h-2 rounded-sm" style={{ backgroundColor: '#00cc00' }} />
-                            <span className="text-xs text-gray-600 font-medium">Inbound</span>
-                            <span className="text-xs font-bold text-gray-700">{formatBps(inBps)}</span>
+
+                    {/* Traffic Stats Grid */}
+                    <div className="border-t border-gray-100 grid grid-cols-2 divide-x divide-gray-100">
+                        {/* Inbound Column */}
+                        <div className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                                <span className="w-2.5 h-2 rounded-sm" style={{ backgroundColor: '#00cc00' }} />
+                                <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Inbound</span>
+                            </div>
+                            <div className="space-y-1">
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-gray-400">Current</span>
+                                    <span className="text-[10px] font-bold text-gray-700">{formatBps(inBps)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-gray-400">Peak</span>
+                                    <span className="text-[10px] font-bold text-gray-700">{formatBps(peakIn)}</span>
+                                </div>
+                                {inUtil > 0 && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] text-gray-400">Utilization</span>
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full" style={{ width: `${Math.min(inUtil, 100)}%`, backgroundColor: inUtil > 80 ? '#ef4444' : inUtil > 60 ? '#f59e0b' : '#22c55e' }} />
+                                            </div>
+                                            <span className="text-[10px] font-bold text-gray-700">{inUtil.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {totalInErrors > 0 && (
+                                    <div className="flex justify-between">
+                                        <span className="text-[10px] text-gray-400">Errors</span>
+                                        <span className="text-[10px] font-bold text-red-500">{totalInErrors.toLocaleString()}</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="w-3 h-2 rounded-sm" style={{ backgroundColor: '#0000ff' }} />
-                            <span className="text-xs text-gray-600 font-medium">Outbound</span>
-                            <span className="text-xs font-bold text-gray-700">{formatBps(outBps)}</span>
+
+                        {/* Outbound Column */}
+                        <div className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                                <span className="w-2.5 h-2 rounded-sm" style={{ backgroundColor: '#0000ff' }} />
+                                <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Outbound</span>
+                            </div>
+                            <div className="space-y-1">
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-gray-400">Current</span>
+                                    <span className="text-[10px] font-bold text-gray-700">{formatBps(outBps)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-gray-400">Peak</span>
+                                    <span className="text-[10px] font-bold text-gray-700">{formatBps(peakOut)}</span>
+                                </div>
+                                {outUtil > 0 && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] text-gray-400">Utilization</span>
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full" style={{ width: `${Math.min(outUtil, 100)}%`, backgroundColor: outUtil > 80 ? '#ef4444' : outUtil > 60 ? '#f59e0b' : '#22c55e' }} />
+                                            </div>
+                                            <span className="text-[10px] font-bold text-gray-700">{outUtil.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {totalOutErrors > 0 && (
+                                    <div className="flex justify-between">
+                                        <span className="text-[10px] text-gray-400">Errors</span>
+                                        <span className="text-[10px] font-bold text-red-500">{totalOutErrors.toLocaleString()}</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </>
@@ -673,15 +747,22 @@ export default function DeviceDetailPage() {
                                 <tr className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold tracking-wider">
                                     <th className="px-4 py-3 w-16">Monitor</th>
                                     <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Index</th>
                                     <th className="px-4 py-3">Interface</th>
+                                    <th className="px-4 py-3">Description</th>
                                     <th className="px-4 py-3">Speed</th>
+                                    <th className="px-4 py-3">Admin</th>
                                     <th className="px-4 py-3">Type</th>
+                                    <th className="px-4 py-3">MAC</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {filteredInterfaces.map((iface: any) => {
                                     const isUp = iface.ifOperStatus === 'up';
+                                    const isAdminUp = iface.ifAdminStatus === 'up';
                                     const isMonitored = iface.pollingEnabled;
+                                    const ifaceName = iface.ifName || iface.ifDescr || `if${iface.ifIndex}`;
+                                    const ifaceDesc = iface.ifAlias || iface.ifDescr || '—';
                                     return (
                                         <tr key={iface.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="px-4 py-3">
@@ -702,12 +783,24 @@ export default function DeviceDetailPage() {
                                                     {isUp ? 'UP' : 'DOWN'}
                                                 </span>
                                             </td>
+                                            <td className="px-4 py-3 text-gray-400 text-xs font-mono">{iface.ifIndex}</td>
                                             <td className="px-4 py-3">
-                                                <p className="font-semibold">{iface.ifName || `if${iface.ifIndex}`}</p>
-                                                <p className="text-xs text-gray-400">{iface.ifAlias || iface.ifDescr || '—'}</p>
+                                                <p className="font-semibold">{ifaceName}</p>
                                             </td>
-                                            <td className="px-4 py-3">{formatSpeed(Number(iface.ifSpeed) || 0)}</td>
-                                            <td className="px-4 py-3 text-gray-500">{iface.ifType || '—'}</td>
+                                            <td className="px-4 py-3">
+                                                <p className="text-xs text-gray-500 truncate max-w-[200px]">{ifaceDesc}</p>
+                                            </td>
+                                            <td className="px-4 py-3 text-xs font-medium">{formatSpeed(Number(iface.ifHighSpeed || iface.ifSpeed) || 0)}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isAdminUp
+                                                    ? 'bg-blue-50 text-blue-500'
+                                                    : 'bg-orange-50 text-orange-500'
+                                                    }`}>
+                                                    {isAdminUp ? 'UP' : 'DOWN'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-500 text-xs">{iface.ifType || '—'}</td>
+                                            <td className="px-4 py-3 text-gray-400 text-xs font-mono">{iface.ifPhysAddress || '—'}</td>
                                         </tr>
                                     );
                                 })}

@@ -71,6 +71,28 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
+# Detect the machine's primary LAN IP address
+detect_local_ip() {
+    local ip=""
+    case "$OSTYPE" in
+        darwin*)
+            # macOS: get IP of the active network interface
+            ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
+            ;;
+        *)
+            # Linux: get the default route interface IP
+            ip=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || echo "")
+            ;;
+    esac
+
+    # Fallback to localhost if detection fails
+    if [[ -z "$ip" ]]; then
+        ip="localhost"
+    fi
+
+    echo "$ip"
+}
+
 # ─── Spinner (for long-running tasks) ────────────────────
 
 spinner() {
@@ -514,16 +536,16 @@ generate_env() {
     section "Environment Configuration"
 
     local env_file="${INSTALL_DIR}/.env"
-    local db_host="localhost"
+    local db_host="127.0.0.1"
     local db_name="${POSTGRES_DB:-netmon}"
     local db_user="${POSTGRES_USER:-netmon}"
     local db_pass="${GENERATED_DB_PASS:-$(generate_secret 32)}"
-    local redis_host="localhost"
+    local redis_host="127.0.0.1"
     local redis_port="6379"
     local redis_pass="${GENERATED_REDIS_PASS:-$(generate_secret 32)}"
     local jwt_secret
     local encryption_key
-    local api_domain="${API_DOMAIN:-localhost}"
+    local api_domain="${API_DOMAIN:-$(detect_local_ip)}"
 
     jwt_secret="$(generate_secret 64)"
     encryption_key="$(generate_secret 32)"
@@ -602,18 +624,26 @@ setup_application() {
     log "npm dependencies installed"
 
     info "Generating Prisma client..."
-    npm run db:generate 2>&1 | tail -1
+    if ! out=$(npm run db:generate 2>&1); then
+        echo -e "\n  ${RED}Failed to generate Prisma client. Output:${NC}\n$out\n"
+        error "Prisma client generation failed."
+    fi
     log "Prisma client generated"
 
     info "Running database migrations..."
-    npm run db:migrate 2>&1 | tail -1
+    if ! out=$(npm run db:migrate 2>&1); then
+        echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
+        error "Database migration failed."
+    fi
     log "Database migrations applied"
 
     info "Seeding database with default admin user..."
-    npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1 | tail -3 || {
-        warn "Seeding skipped — you may need to create an admin user manually"
-    }
-    log "Database seeded (default: admin / admin)"
+    if ! out=$(npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1); then
+        warn "Seeding skipped or failed — you may need to create an admin user manually."
+        echo -e "  ${DIM}Seed output:\n$out${NC}"
+    else
+        log "Database seeded (default: admin / admin)"
+    fi
 
     info "Building production assets (this may take a few minutes)..."
     run_with_spinner "Building production assets..." npm run build
@@ -720,7 +750,7 @@ Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}/apps/web
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -p \${WEB_PORT:-3001}
+ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p \${WEB_PORT:-3001}
 Restart=always
 RestartSec=5
 StandardOutput=journal

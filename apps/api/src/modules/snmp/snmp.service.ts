@@ -235,19 +235,32 @@ export class SnmpService {
     }
 
     /**
-     * Discover all interfaces on a device via ifTable + ifXTable walk
-     */
+ * Discover all interfaces on a device via ifTable + ifXTable walk
+ */
     async getInterfaces(target: SnmpTarget): Promise<InterfaceInfo[]> {
         // Walk ifTable and ifXTable in parallel
-        const [ifTableData, ifXTableData] = await Promise.all([
-            this.walk(target, '1.3.6.1.2.1.2.2'),     // ifTable
-            this.walk(target, '1.3.6.1.2.1.31.1.1'),   // ifXTable
-        ]);
+        // Use independent try/catch so ifXTable failure doesn't kill discovery
+        let ifTableData = new Map<string, any>();
+        let ifXTableData = new Map<string, any>();
+
+        try {
+            ifTableData = await this.walk(target, '1.3.6.1.2.1.2.2');     // ifTable
+        } catch (err) {
+            this.logger.warn(`ifTable walk failed for ${target.host}: ${err}`);
+        }
+
+        try {
+            ifXTableData = await this.walk(target, '1.3.6.1.2.1.31.1.1');   // ifXTable
+        } catch (err) {
+            this.logger.warn(`ifXTable walk failed for ${target.host}: ${err}`);
+        }
 
         // Group by ifIndex
         const interfaces = new Map<number, Partial<InterfaceInfo>>();
 
         // Parse ifTable entries
+        // IMPORTANT: append '.' to prevent prefix collisions
+        // e.g., ifDescr (.2) must NOT match ifOutErrors (.20)
         for (const [oid, value] of ifTableData) {
             const ifIndex = this.extractIfIndex(oid);
             if (ifIndex === null) continue;
@@ -257,17 +270,17 @@ export class SnmpService {
             }
             const iface = interfaces.get(ifIndex)!;
 
-            if (oid.startsWith(IF_TABLE_OIDS.ifDescr)) iface.ifDescr = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifType)) iface.ifType = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifMtu)) iface.ifMtu = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifSpeed)) iface.ifSpeed = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifPhysAddress)) iface.ifPhysAddress = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifAdminStatus)) iface.ifAdminStatus = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifOperStatus)) iface.ifOperStatus = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifInOctets)) iface.ifInOctets = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifOutOctets)) iface.ifOutOctets = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifInErrors)) iface.ifInErrors = value;
-            else if (oid.startsWith(IF_TABLE_OIDS.ifOutErrors)) iface.ifOutErrors = value;
+            if (oid.startsWith(IF_TABLE_OIDS.ifDescr + '.')) iface.ifDescr = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifType + '.')) iface.ifType = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifMtu + '.')) iface.ifMtu = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifSpeed + '.')) iface.ifSpeed = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifPhysAddress + '.')) iface.ifPhysAddress = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifAdminStatus + '.')) iface.ifAdminStatus = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifOperStatus + '.')) iface.ifOperStatus = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifInOctets + '.')) iface.ifInOctets = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifOutOctets + '.')) iface.ifOutOctets = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifInErrors + '.')) iface.ifInErrors = value;
+            else if (oid.startsWith(IF_TABLE_OIDS.ifOutErrors + '.')) iface.ifOutErrors = value;
         }
 
         // Parse ifXTable entries (64-bit counters, ifName, ifAlias)
@@ -280,12 +293,31 @@ export class SnmpService {
             }
             const iface = interfaces.get(ifIndex)!;
 
-            if (oid.startsWith(IF_XTABLE_OIDS.ifName)) iface.ifName = value;
-            else if (oid.startsWith(IF_XTABLE_OIDS.ifHighSpeed)) iface.ifHighSpeed = value;
-            else if (oid.startsWith(IF_XTABLE_OIDS.ifAlias)) iface.ifAlias = value;
+            if (oid.startsWith(IF_XTABLE_OIDS.ifName + '.')) iface.ifName = value;
+            else if (oid.startsWith(IF_XTABLE_OIDS.ifHighSpeed + '.')) iface.ifHighSpeed = value;
+            else if (oid.startsWith(IF_XTABLE_OIDS.ifAlias + '.')) iface.ifAlias = value;
             // Prefer 64-bit counters when available
-            else if (oid.startsWith(IF_XTABLE_OIDS.ifHCInOctets)) iface.ifInOctets = value;
-            else if (oid.startsWith(IF_XTABLE_OIDS.ifHCOutOctets)) iface.ifOutOctets = value;
+            else if (oid.startsWith(IF_XTABLE_OIDS.ifHCInOctets + '.')) iface.ifInOctets = value;
+            else if (oid.startsWith(IF_XTABLE_OIDS.ifHCOutOctets + '.')) iface.ifOutOctets = value;
+        }
+
+        // If ifTable walk returned nothing, try a fallback: walk ifDescr to discover indices
+        if (interfaces.size === 0) {
+            this.logger.warn(`No interfaces found via ifTable walk for ${target.host}, trying ifDescr walk`);
+            try {
+                const ifDescrData = await this.walk(target, IF_TABLE_OIDS.ifDescr);
+                for (const [oid, value] of ifDescrData) {
+                    const ifIndex = this.extractIfIndex(oid);
+                    if (ifIndex === null) continue;
+                    interfaces.set(ifIndex, {
+                        ifIndex,
+                        ifDescr: value,
+                        ifName: value,
+                    });
+                }
+            } catch (err) {
+                this.logger.warn(`ifDescr fallback walk also failed for ${target.host}: ${err}`);
+            }
         }
 
         // Convert to array with defaults

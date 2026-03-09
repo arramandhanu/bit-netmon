@@ -11,15 +11,24 @@ import {
     TrendingUp,
     ChevronRight,
     Cpu,
+    Wifi,
+    Ticket,
+    Shield,
+    Search,
+    Router,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useDashboard } from '@/hooks/use-dashboard';
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
 import { MetricCard } from '@/components/ui/metric-card';
+import { getStoredUser } from '@/hooks/use-auth';
 
 export default function DashboardPage() {
     const { data, loading, error, refetch } = useDashboard();
+    const currentUser = getStoredUser();
+    const userRole = currentUser?.role || 'viewer';
+    const isAdminMode = userRole === 'admin' || userRole === 'operator';
 
     if (loading) return <DashboardSkeleton />;
     if (error || !data) return <ErrorState message={error || 'No data'} onRetry={refetch} />;
@@ -78,6 +87,42 @@ export default function DashboardPage() {
                     iconBg="bg-purple-100"
                     iconColor="text-purple-600"
                     detail="Across all devices"
+                />
+            </div>
+
+            {/* Secondary KPI Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard
+                    label="Locations"
+                    value={data.totalLocations.toLocaleString()}
+                    icon={MapPin}
+                    iconBg="bg-orange-100"
+                    iconColor="text-orange-600"
+                    detail={`${data.activeLocations} active locations`}
+                />
+                <MetricCard
+                    label="Interfaces"
+                    value={data.totalInterfaces.toLocaleString()}
+                    icon={Router}
+                    iconBg="bg-teal-100"
+                    iconColor="text-teal-600"
+                    detail={data.interfacesDown > 0 ? `${data.interfacesDown} down` : 'All interfaces up'}
+                />
+                <MetricCard
+                    label="Wireless"
+                    value={`${data.clientsConnected}`}
+                    icon={Wifi}
+                    iconBg="bg-cyan-100"
+                    iconColor="text-cyan-600"
+                    detail={`${data.totalAps} Access Points online`}
+                />
+                <MetricCard
+                    label="Open Tickets"
+                    value={data.openTickets.toLocaleString()}
+                    icon={Ticket}
+                    iconBg="bg-pink-100"
+                    iconColor="text-pink-600"
+                    detail="Awaiting resolution"
                 />
             </div>
 
@@ -156,6 +201,77 @@ export default function DashboardPage() {
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* Bottom Row: Recent Tickets & Admin Tools */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Recent Tickets Widget */}
+                <div className="rounded-xl border-2 border-gray-200 bg-white overflow-hidden">
+                    <div className="flex items-center justify-between p-5 border-b border-gray-200">
+                        <div className="flex items-center gap-2">
+                            <Ticket className="h-4 w-4 text-pink-400" />
+                            <h2 className="font-semibold">Recent Tickets</h2>
+                        </div>
+                        <Link href="/tickets" className="flex items-center gap-1 text-xs text-primary hover:underline">
+                            View all <ChevronRight className="h-3 w-3" />
+                        </Link>
+                    </div>
+                    <div className="divide-y divide-border/30">
+                        {data.recentTickets.length === 0 ? (
+                            <div className="p-8 text-center text-sm text-muted-foreground">No open tickets</div>
+                        ) : (
+                            data.recentTickets.map((ticket: any) => (
+                                <Link key={ticket.id} href={`/tickets?id=${ticket.id}`}>
+                                    <div className="flex items-center gap-3 px-5 py-3 hover:bg-accent/50 transition-colors cursor-pointer">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{ticket.title}</p>
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                {ticket.device?.hostname ? `Device: ${ticket.device.hostname}` : 'General Issue'}
+                                            </p>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                            {new Date(ticket.createdAt).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                </Link>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* Admin Operations Placeholder */}
+                {isAdminMode && (
+                    <div className="rounded-xl border-2 border-gray-200 bg-white overflow-hidden">
+                        <div className="flex items-center justify-between p-5 border-b border-gray-200">
+                            <div className="flex items-center gap-2">
+                                <Shield className="h-4 w-4 text-purple-400" />
+                                <h2 className="font-semibold">Admin Overview</h2>
+                            </div>
+                        </div>
+                        <div className="p-5 flex flex-col gap-4">
+                            <div className="flex items-center justify-between bg-accent/30 rounded-lg p-4 border border-border/50">
+                                <div className="flex items-center gap-3">
+                                    <Search className="h-5 w-5 text-indigo-500" />
+                                    <div>
+                                        <p className="text-sm font-medium">Recent Discoveries</p>
+                                        <p className="text-xs text-muted-foreground">0 devices found</p>
+                                    </div>
+                                </div>
+                                <Link href="/admin/discovery" className="text-xs text-primary hover:underline">Manage</Link>
+                            </div>
+                            <div className="flex items-center justify-between bg-accent/30 rounded-lg p-4 border border-border/50">
+                                <div className="flex items-center gap-3">
+                                    <Shield className="h-5 w-5 text-rose-500" />
+                                    <div>
+                                        <p className="text-sm font-medium">Security Events</p>
+                                        <p className="text-xs text-muted-foreground">0 new alerts</p>
+                                    </div>
+                                </div>
+                                <Link href="/admin/security" className="text-xs text-primary hover:underline">Review</Link>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

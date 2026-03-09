@@ -193,6 +193,50 @@ export class MetricsService {
     }
 
     /**
+     * Get extended dashboard overview for widgets
+     */
+    async getExtendedDashboardOverview() {
+        // 1. Get base device metrics
+        const metrics = await this.getDashboardOverview();
+
+        // 2. Fetch additional data concurrently
+        const [
+            totalLocations,
+            totalInterfaces,
+            interfacesDown,
+            openTickets,
+            recentTickets,
+        ] = await Promise.all([
+            this.prisma.location.count(),
+            this.prisma.interface.count(),
+            this.prisma.interface.count({ where: { ifOperStatus: 'down' } }),
+            this.prisma.ticket.count({ where: { status: { notIn: ['resolved', 'closed'] } } }),
+            this.prisma.ticket.findMany({
+                where: { status: { notIn: ['resolved', 'closed'] } },
+                orderBy: { createdAt: 'desc' },
+                take: 5,
+                include: {
+                    device: { select: { hostname: true } },
+                }
+            }),
+        ]);
+
+        return {
+            metrics,
+            totalLocations,
+            activeLocations: totalLocations, // Assumption: all existing locations are active
+            totalInterfaces,
+            interfacesDown,
+            totalAps: 0, // Mock for now
+            clientsConnected: 0, // Mock for now
+            openTickets,
+            recentTickets,
+            recentDiscovery: [], // Mock for now
+            recentSecurityEvents: [] // Mock for now
+        };
+    }
+
+    /**
      * Purge old metrics/alerts/audit logs based on configured retention periods.
      * Call this from a cron job (e.g., nightly).
      */
