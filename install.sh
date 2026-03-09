@@ -674,7 +674,12 @@ generate_env() {
     local redis_pass="${GENERATED_REDIS_PASS:-$(generate_secret 32)}"
     local jwt_secret
     local encryption_key
-    local api_domain="${API_DOMAIN:-$(detect_local_ip)}"
+    local api_domain="${API_DOMAIN:-localhost}"
+    
+    if [[ "$api_domain" == "localhost" ]]; then
+        info "No API_DOMAIN set — using localhost for local access"
+        info "Set API_DOMAIN=your-server-ip or domain for network access"
+    fi
     
     # Generate admin password
     local admin_password="$(generate_secret 24)"
@@ -693,12 +698,12 @@ generate_env() {
 
 # App Admin Account (used during seed)
 ADMIN_USERNAME=admin
-ADMIN_EMAIL=admin@\${api_domain}
-ADMIN_PASSWORD=\${admin_password}
+ADMIN_EMAIL=admin@${api_domain}
+ADMIN_PASSWORD=${admin_password}
 
 # Database
-POSTGRES_USER=\${db_user}
-POSTGRES_PASSWORD=\${db_pass}
+POSTGRES_USER=${db_user}
+POSTGRES_PASSWORD=${db_pass}
 POSTGRES_DB=${db_name}
 POSTGRES_PORT=5432
 DATABASE_URL=postgresql://${db_user}:${db_pass}@${db_host}:5432/${db_name}?schema=public
