@@ -82,11 +82,17 @@ export function useDashboard(refreshInterval = 30000) {
 
       const avgCpu =
         cpuValues.length > 0
-          ? Math.round(cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length)
+          ? Math.round(
+              cpuValues.reduce((a: number, b: number) => a + b, 0) /
+                cpuValues.length,
+            )
           : 0;
       const avgMemory =
         memValues.length > 0
-          ? Math.round(memValues.reduce((a, b) => a + b, 0) / memValues.length)
+          ? Math.round(
+              memValues.reduce((a: number, b: number) => a + b, 0) /
+                memValues.length,
+            )
           : 0;
 
       const topCpuDevices = [...metrics]
