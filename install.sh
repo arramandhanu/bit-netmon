@@ -1009,6 +1009,8 @@ Requires=${POSTGRES_SERVICE}.service ${REDIS_SERVICE}.service
 Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}
+Environment="NODE_ENV=production"
+Environment="API_PORT=${API_PORT}"
 EnvironmentFile=${INSTALL_DIR}/.env
 ExecStart=${node_path} apps/api/dist/main.js
 Restart=always
@@ -1037,8 +1039,9 @@ After=network.target netmon-api.service
 Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}/apps/web
-EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p \${WEB_PORT:-3001}
+Environment="NODE_ENV=production"
+Environment="WEB_PORT=${WEB_PORT}"
+ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p ${WEB_PORT}
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -1517,6 +1520,10 @@ main() {
     setup_application
     setup_firewall
     setup_systemd
+    
+    $SUDO_CMD chown "${SUDO_USER:-root}:root" "${INSTALL_DIR}/.env" 2>/dev/null || true
+    $SUDO_CMD chmod 640 "${INSTALL_DIR}/.env" 2>/dev/null || true
+    
     setup_logrotate
     setup_watchdog
     verify_health
