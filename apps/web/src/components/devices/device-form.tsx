@@ -193,7 +193,7 @@ export function DeviceForm({
 
     const scrollToSection = (id: string) => {
         setActiveSection(id);
-        sectionRefs[id]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        sectionRefs[id as keyof typeof sectionRefs]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     // Track active section on scroll
