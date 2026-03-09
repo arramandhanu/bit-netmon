@@ -684,6 +684,33 @@ setup_application() {
         log "Fresh database — no migration history yet"
     fi
 
+    # ── Database Baselining ──────────────────────────────
+    # If the database already has our tables (e.g. from an old install)
+    # but the migration history is empty/missing, Prisma will throw P3005.
+    # We must mark 00001_init as applied BEFORE running migrate.
+    local needs_baseline=""
+    needs_baseline=$(eval "$run_psql -tAc \"
+        SELECT count(*) FROM information_schema.tables
+        WHERE table_name = 'users'
+    \"" 2>/dev/null || echo "0")
+
+    local history_count=""
+    if [[ "$has_failed" == "1" ]]; then
+        history_count=$(eval "$run_psql -tAc \"SELECT count(*) FROM _prisma_migrations\"" 2>/dev/null || echo "0")
+    else
+        history_count="0"
+    fi
+
+    if [[ "$needs_baseline" == "1" ]] && [[ "$history_count" == "0" ]]; then
+        info "Database has existing tables but no migration history."
+        info "Baselining 00001_init..."
+        if npx prisma migrate resolve --applied 00001_init --schema=packages/database/prisma/schema.prisma 2>&1; then
+            log "Baselined 00001_init successfully"
+        else
+            warn "Failed to baseline 00001_init"
+        fi
+    fi
+
     # Drop old hypertable objects with wrong column names if they exist
     # from a previous broken 00002_timescaledb_setup migration
     local has_wrong_cols=""
