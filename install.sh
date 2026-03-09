@@ -633,6 +633,11 @@ setup_application() {
     log "Prisma client generated"
 
     # ── 3. Clean stale migration state ───────────────────
+    # Forcefully remove the old timescaledb migration folder if it exists.
+    # We moved this to 00002_timescaledb_setup. If the folder remains (e.g., from
+    # a git pull leaving untracked files), Prisma will fail with P3015.
+    rm -rf packages/database/prisma/migrations/timescaledb
+
     # If a previous install attempt left failed/rolled-back entries in
     # _prisma_migrations, drop the tracking table so Prisma can start
     # fresh. This is safe because our migration SQL is fully idempotent
@@ -735,13 +740,24 @@ setup_application() {
         # P3018: a migration failed to apply
         if echo "$out" | grep -q "P3018"; then
             warn "Migration apply error (attempt ${migrate_attempts}/${migrate_max})..."
+            echo -e "  ${DIM}Error details:\n$out${NC}"
             local apply_failed
             apply_failed=$(echo "$out" | sed -n 's/.*Migration name: \(.*\)/\1/p' | tr -d '[:space:]')
             if [[ -n "$apply_failed" ]]; then
-                info "Resolving: ${apply_failed}..."
-                if npx prisma migrate resolve --rolled-back "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
-                    log "Marked '${apply_failed}' as rolled-back"
-                    continue
+                # Special case: If 00001_init fails because tables already exist from an older
+                # partial install, we mark it as APPLIED so we can just move forward.
+                if [[ "$apply_failed" == "00001_init" ]] && echo "$out" | grep -qi "already exists"; then
+                    info "Tables already exist from previous install — marking 00001_init as applied..."
+                    if npx prisma migrate resolve --applied "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
+                        log "Marked '${apply_failed}' as applied"
+                        continue
+                    fi
+                else
+                    info "Resolving: ${apply_failed}..."
+                    if npx prisma migrate resolve --rolled-back "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
+                        log "Marked '${apply_failed}' as rolled-back"
+                        continue
+                    fi
                 fi
             fi
         fi
