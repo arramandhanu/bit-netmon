@@ -82,9 +82,9 @@ banner() {
 
 log()     { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}⚠${NC} $1"; }
-error()   { echo -e "  ${RED}✗${NC} $1" | tee -a "$LOG_FILE" 2>/dev/null; exit 1; }
+error()   { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 info()    { echo -e "  ${BLUE}→${NC} $1"; }
-section() { echo ""; echo -e "  ${BOLD}━━━ $1 ━━━${NC}" | tee -a "$LOG_FILE" 2>/dev/null; echo ""; }
+section() { echo ""; echo -e "  ${BOLD}━━━ $1 ━━━${NC}"; echo ""; }
 verbose() { [[ "$VERBOSE" == "true" ]] && echo -e "  ${DIM}$1${NC}"; }
 
 log_to_file() {
