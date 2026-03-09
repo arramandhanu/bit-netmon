@@ -31,7 +31,7 @@ CREATE TYPE "ticket_priority" AS ENUM ('low', 'medium', 'high', 'critical');
 CREATE TYPE "ticket_category" AS ENUM ('incident', 'problem', 'change_request', 'maintenance');
 
 -- CreateTable
-CREATE TABLE "locations" (
+CREATE TABLE IF NOT EXISTS "locations" (
     "location_id" SERIAL NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "code" VARCHAR(50) NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE "locations" (
 );
 
 -- CreateTable
-CREATE TABLE "devices" (
+CREATE TABLE IF NOT EXISTS "devices" (
     "device_id" SERIAL NOT NULL,
     "hostname" VARCHAR(255) NOT NULL,
     "ip_address" VARCHAR(45) NOT NULL,
@@ -80,7 +80,7 @@ CREATE TABLE "devices" (
 );
 
 -- CreateTable
-CREATE TABLE "interfaces" (
+CREATE TABLE IF NOT EXISTS "interfaces" (
     "interface_id" SERIAL NOT NULL,
     "device_id" INTEGER NOT NULL,
     "if_index" INTEGER NOT NULL,
@@ -101,7 +101,7 @@ CREATE TABLE "interfaces" (
 );
 
 -- CreateTable
-CREATE TABLE "alert_rules" (
+CREATE TABLE IF NOT EXISTS "alert_rules" (
     "rule_id" SERIAL NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
@@ -120,7 +120,7 @@ CREATE TABLE "alert_rules" (
 );
 
 -- CreateTable
-CREATE TABLE "alert_history" (
+CREATE TABLE IF NOT EXISTS "alert_history" (
     "alert_id" SERIAL NOT NULL,
     "device_id" INTEGER NOT NULL,
     "rule_id" INTEGER NOT NULL,
@@ -137,7 +137,7 @@ CREATE TABLE "alert_history" (
 );
 
 -- CreateTable
-CREATE TABLE "device_groups" (
+CREATE TABLE IF NOT EXISTS "device_groups" (
     "group_id" SERIAL NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
@@ -148,7 +148,7 @@ CREATE TABLE "device_groups" (
 );
 
 -- CreateTable
-CREATE TABLE "device_group_members" (
+CREATE TABLE IF NOT EXISTS "device_group_members" (
     "group_id" INTEGER NOT NULL,
     "device_id" INTEGER NOT NULL,
 
@@ -156,7 +156,7 @@ CREATE TABLE "device_group_members" (
 );
 
 -- CreateTable
-CREATE TABLE "polling_jobs" (
+CREATE TABLE IF NOT EXISTS "polling_jobs" (
     "job_id" SERIAL NOT NULL,
     "device_id" INTEGER NOT NULL,
     "job_type" VARCHAR(50) NOT NULL,
@@ -171,7 +171,7 @@ CREATE TABLE "polling_jobs" (
 );
 
 -- CreateTable
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
     "user_id" SERIAL NOT NULL,
     "username" VARCHAR(100) NOT NULL,
     "email" VARCHAR(255) NOT NULL,
@@ -189,7 +189,7 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
-CREATE TABLE "audit_logs" (
+CREATE TABLE IF NOT EXISTS "audit_logs" (
     "log_id" SERIAL NOT NULL,
     "user_id" INTEGER,
     "action" VARCHAR(100) NOT NULL,
@@ -203,7 +203,7 @@ CREATE TABLE "audit_logs" (
 );
 
 -- CreateTable
-CREATE TABLE "system_settings" (
+CREATE TABLE IF NOT EXISTS "system_settings" (
     "key" VARCHAR(100) NOT NULL,
     "value" TEXT NOT NULL,
     "category" VARCHAR(50) NOT NULL,
@@ -213,7 +213,7 @@ CREATE TABLE "system_settings" (
 );
 
 -- CreateTable
-CREATE TABLE "api_keys" (
+CREATE TABLE IF NOT EXISTS "api_keys" (
     "api_key_id" SERIAL NOT NULL,
     "user_id" INTEGER NOT NULL,
     "name" VARCHAR(100) NOT NULL,
@@ -228,7 +228,7 @@ CREATE TABLE "api_keys" (
 );
 
 -- CreateTable
-CREATE TABLE "tickets" (
+CREATE TABLE IF NOT EXISTS "tickets" (
     "ticket_id" SERIAL NOT NULL,
     "ticket_number" VARCHAR(20) NOT NULL,
     "title" VARCHAR(500) NOT NULL,
@@ -251,7 +251,7 @@ CREATE TABLE "tickets" (
 );
 
 -- CreateTable
-CREATE TABLE "ticket_comments" (
+CREATE TABLE IF NOT EXISTS "ticket_comments" (
     "comment_id" SERIAL NOT NULL,
     "ticket_id" INTEGER NOT NULL,
     "user_id" INTEGER NOT NULL,
@@ -265,7 +265,7 @@ CREATE TABLE "ticket_comments" (
 );
 
 -- CreateTable
-CREATE TABLE "ticket_attachments" (
+CREATE TABLE IF NOT EXISTS "ticket_attachments" (
     "attachment_id" SERIAL NOT NULL,
     "ticket_id" INTEGER NOT NULL,
     "uploaded_by" INTEGER NOT NULL,
@@ -285,40 +285,40 @@ CREATE UNIQUE INDEX "locations_code_key" ON "locations"("code");
 CREATE UNIQUE INDEX "devices_hostname_key" ON "devices"("hostname");
 
 -- CreateIndex
-CREATE INDEX "idx_devices_location" ON "devices"("location_id");
+CREATE INDEX IF NOT EXISTS "idx_devices_location" ON "devices"("location_id");
 
 -- CreateIndex
-CREATE INDEX "idx_devices_status" ON "devices"("status");
+CREATE INDEX IF NOT EXISTS "idx_devices_status" ON "devices"("status");
 
 -- CreateIndex
-CREATE INDEX "idx_devices_type" ON "devices"("device_type");
+CREATE INDEX IF NOT EXISTS "idx_devices_type" ON "devices"("device_type");
 
 -- CreateIndex
-CREATE INDEX "idx_devices_ip" ON "devices"("ip_address");
+CREATE INDEX IF NOT EXISTS "idx_devices_ip" ON "devices"("ip_address");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "uq_device_ifindex" ON "interfaces"("device_id", "if_index");
 
 -- CreateIndex
-CREATE INDEX "idx_interfaces_device" ON "interfaces"("device_id");
+CREATE INDEX IF NOT EXISTS "idx_interfaces_device" ON "interfaces"("device_id");
 
 -- CreateIndex
-CREATE INDEX "idx_interfaces_status" ON "interfaces"("if_oper_status");
+CREATE INDEX IF NOT EXISTS "idx_interfaces_status" ON "interfaces"("if_oper_status");
 
 -- CreateIndex
-CREATE INDEX "idx_alerts_device_time" ON "alert_history"("device_id", "triggered_at");
+CREATE INDEX IF NOT EXISTS "idx_alerts_device_time" ON "alert_history"("device_id", "triggered_at");
 
 -- CreateIndex
-CREATE INDEX "idx_alerts_state" ON "alert_history"("state");
+CREATE INDEX IF NOT EXISTS "idx_alerts_state" ON "alert_history"("state");
 
 -- CreateIndex
-CREATE INDEX "idx_alerts_severity" ON "alert_history"("severity");
+CREATE INDEX IF NOT EXISTS "idx_alerts_severity" ON "alert_history"("severity");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "device_groups_name_key" ON "device_groups"("name");
 
 -- CreateIndex
-CREATE INDEX "idx_polling_jobs_device" ON "polling_jobs"("device_id", "created_at");
+CREATE INDEX IF NOT EXISTS "idx_polling_jobs_device" ON "polling_jobs"("device_id", "created_at");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
@@ -327,49 +327,49 @@ CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
-CREATE INDEX "idx_audit_user" ON "audit_logs"("user_id", "created_at");
+CREATE INDEX IF NOT EXISTS "idx_audit_user" ON "audit_logs"("user_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "idx_audit_entity" ON "audit_logs"("entity", "entity_id");
+CREATE INDEX IF NOT EXISTS "idx_audit_entity" ON "audit_logs"("entity", "entity_id");
 
 -- CreateIndex
-CREATE INDEX "idx_settings_category" ON "system_settings"("category");
+CREATE INDEX IF NOT EXISTS "idx_settings_category" ON "system_settings"("category");
 
 -- CreateIndex
-CREATE INDEX "idx_api_keys_prefix" ON "api_keys"("prefix");
+CREATE INDEX IF NOT EXISTS "idx_api_keys_prefix" ON "api_keys"("prefix");
 
 -- CreateIndex
-CREATE INDEX "idx_api_keys_user" ON "api_keys"("user_id");
+CREATE INDEX IF NOT EXISTS "idx_api_keys_user" ON "api_keys"("user_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "tickets_ticket_number_key" ON "tickets"("ticket_number");
 
 -- CreateIndex
-CREATE INDEX "idx_tickets_status" ON "tickets"("status");
+CREATE INDEX IF NOT EXISTS "idx_tickets_status" ON "tickets"("status");
 
 -- CreateIndex
-CREATE INDEX "idx_tickets_priority" ON "tickets"("priority");
+CREATE INDEX IF NOT EXISTS "idx_tickets_priority" ON "tickets"("priority");
 
 -- CreateIndex
-CREATE INDEX "idx_tickets_assignee" ON "tickets"("assignee_id");
+CREATE INDEX IF NOT EXISTS "idx_tickets_assignee" ON "tickets"("assignee_id");
 
 -- CreateIndex
-CREATE INDEX "idx_tickets_device" ON "tickets"("device_id");
+CREATE INDEX IF NOT EXISTS "idx_tickets_device" ON "tickets"("device_id");
 
 -- CreateIndex
-CREATE INDEX "idx_tickets_creator" ON "tickets"("creator_id");
+CREATE INDEX IF NOT EXISTS "idx_tickets_creator" ON "tickets"("creator_id");
 
 -- CreateIndex
-CREATE INDEX "idx_tickets_created" ON "tickets"("created_at");
+CREATE INDEX IF NOT EXISTS "idx_tickets_created" ON "tickets"("created_at");
 
 -- CreateIndex
-CREATE INDEX "idx_ticket_comments_ticket" ON "ticket_comments"("ticket_id", "created_at");
+CREATE INDEX IF NOT EXISTS "idx_ticket_comments_ticket" ON "ticket_comments"("ticket_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "idx_ticket_comments_parent" ON "ticket_comments"("parent_id");
+CREATE INDEX IF NOT EXISTS "idx_ticket_comments_parent" ON "ticket_comments"("parent_id");
 
 -- CreateIndex
-CREATE INDEX "idx_ticket_attachments_ticket" ON "ticket_attachments"("ticket_id");
+CREATE INDEX IF NOT EXISTS "idx_ticket_attachments_ticket" ON "ticket_attachments"("ticket_id");
 
 -- AddForeignKey
 ALTER TABLE "devices" ADD CONSTRAINT "devices_location_id_fkey" FOREIGN KEY ("location_id") REFERENCES "locations"("location_id") ON DELETE SET NULL ON UPDATE CASCADE;
