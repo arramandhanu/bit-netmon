@@ -392,7 +392,9 @@ clone_or_detect_repo() {
         warn "Existing installation found at ${INSTALL_PATH}"
         info "Pulling latest changes..."
         cd "$INSTALL_PATH"
-        git pull origin "$VERSION_TAG" 2>&1 | tail -1
+        git fetch origin "$VERSION_TAG" 2>&1 | tail -1
+        git reset --hard "origin/$VERSION_TAG" 2>&1 | tail -1
+        git clean -fd 2>&1 | tail -1
     else
         info "Cloning to ${INSTALL_PATH}..."
         git clone --branch "$VERSION_TAG" "$REPO_URL" "$INSTALL_PATH"
