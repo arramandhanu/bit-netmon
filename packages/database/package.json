@@ -20,7 +20,9 @@
         "typescript": "^5.4.0",
         "ts-node": "^10.9.0",
         "bcryptjs": "^2.4.3",
-        "@types/bcryptjs": "^2.4.6"
+        "@types/bcryptjs": "^2.4.6",
+        "dotenv": "^16.0.0",
+        "@types/node": "^20.0.0"
     },
     "prisma": {
         "seed": "ts-node prisma/seed.ts"

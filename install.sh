@@ -935,11 +935,14 @@ setup_application() {
     log "Database migrations applied"
 
     info "Seeding database with default admin user..."
+    set -a
+    source "${INSTALL_DIR}/.env"
+    set +a
     if ! out=$(npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1); then
         warn "Seeding skipped or failed — you may need to create an admin user manually."
         verbose "Seed output: $out"
     else
-        log "Database seeded (default: admin / admin)"
+        log "Database seeded (admin / ${ADMIN_PASSWORD:-admin})"
     fi
 
     info "Building production assets..."
