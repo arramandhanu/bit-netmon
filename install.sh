@@ -304,6 +304,11 @@ check_resources() {
 detect_os() {
     section "Detecting Operating System"
 
+    if [[ -n "$OS" ]] && [[ "$OS" != "" ]]; then
+        log "OS already detected: $OS"
+        return 0
+    fi
+
     if [[ "$OSTYPE" == "darwin"* ]]; then
         OS="macos"
         PKG_MANAGER="brew"
@@ -329,11 +334,18 @@ detect_os() {
                 log "Detected $PRETTY_NAME"
                 ;;
             *)
-                error "Unsupported Linux distribution: $ID"
+                warn "Could not detect OS from /etc/os-release (ID=$ID)"
+                OS="debian"
+                PKG_MANAGER="apt"
+                SUDO_CMD="sudo"
+                log "Assuming Debian-based Linux"
                 ;;
         esac
     else
-        error "Unable to detect operating system"
+        warn "/etc/os-release not found, assuming Debian"
+        OS="debian"
+        PKG_MANAGER="apt"
+        SUDO_CMD="sudo"
     fi
 }
 
