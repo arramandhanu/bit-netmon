@@ -812,7 +812,27 @@ setup_application() {
             eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations;'" 2>/dev/null || true
             log "Stale migration state cleared"
         else
-            log "Migration state is clean"
+            # Check if all migration names in database exist in repo
+            local missing_migrations=""
+            missing_migrations=$(eval "$run_psql -tAc \"
+                SELECT string_agg(migration_name, ', ')
+                FROM _prisma_migrations
+                WHERE migration_name NOT IN (
+                    SELECT '00001_init' UNION
+                    SELECT '00002_timescaledb_setup' UNION
+                    SELECT 'add_comment_replies' UNION
+                    SELECT 'sprint9_indexes' UNION
+                    SELECT 'add_escalated_on_hold_statuses'
+                )
+            \"" 2>/dev/null || echo "")
+
+            if [[ -n "$missing_migrations" ]]; then
+                warn "Found missing migration files: ${missing_migrations} — cleaning up..."
+                eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations;'" 2>/dev/null || true
+                log "Missing migrations cleared"
+            else
+                log "Migration state is clean"
+            fi
         fi
     else
         log "Fresh database — no migration history yet"
@@ -923,6 +943,14 @@ setup_application() {
                     fi
                 fi
             fi
+        fi
+
+        # P3015: Could not find migration file
+        if echo "$out" | grep -q "P3015"; then
+            warn "Missing migration file detected — cleaning up migration state..."
+            eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations CASCADE;'" 2>/dev/null || true
+            log "Migration state cleared — will retry"
+            continue
         fi
 
         echo -e "\n  ${RED}Database migration failed. Output:${NC}\n$out\n"
