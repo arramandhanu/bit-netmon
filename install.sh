@@ -799,40 +799,18 @@ setup_application() {
     \"" 2>/dev/null || echo "0")
 
     if [[ "$has_failed" == "1" ]]; then
-        local bad_rows
-        bad_rows=$(eval "$run_psql -tAc \"
-            SELECT count(*) FROM _prisma_migrations
-            WHERE finished_at IS NULL
-               OR rolled_back_at IS NOT NULL
-               OR logs IS NOT NULL
-        \"" 2>/dev/null || echo "0")
-
-        if [[ "$bad_rows" -gt 0 ]]; then
-            warn "Found ${bad_rows} failed/stale migration entries — cleaning up..."
-            eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations;'" 2>/dev/null || true
-            log "Stale migration state cleared"
+        # Check if there are any migration entries at all
+        local migration_count=""
+        migration_count=$(eval "$run_psql -tAc \"SELECT count(*) FROM _prisma_migrations\"" 2>/dev/null || echo "0")
+        
+        if [[ "$migration_count" -gt 0 ]]; then
+            # Database has migrations - clean them to allow fresh start
+            # This handles cases where migration files were deleted or changed
+            warn "Found ${migration_count} migration(s) in database — clearing for clean slate..."
+            eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations CASCADE;'" 2>/dev/null || true
+            log "Migration state cleared"
         else
-            # Check if all migration names in database exist in repo
-            local missing_migrations=""
-            missing_migrations=$(eval "$run_psql -tAc \"
-                SELECT string_agg(migration_name, ', ')
-                FROM _prisma_migrations
-                WHERE migration_name NOT IN (
-                    SELECT '00001_init' UNION
-                    SELECT '00002_timescaledb_setup' UNION
-                    SELECT 'add_comment_replies' UNION
-                    SELECT 'sprint9_indexes' UNION
-                    SELECT 'add_escalated_on_hold_statuses'
-                )
-            \"" 2>/dev/null || echo "")
-
-            if [[ -n "$missing_migrations" ]]; then
-                warn "Found missing migration files: ${missing_migrations} — cleaning up..."
-                eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations;'" 2>/dev/null || true
-                log "Missing migrations cleared"
-            else
-                log "Migration state is clean"
-            fi
+            log "Migration state is clean"
         fi
     else
         log "Fresh database — no migration history yet"
