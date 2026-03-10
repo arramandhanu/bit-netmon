@@ -804,11 +804,24 @@ setup_application() {
         migration_count=$(eval "$run_psql -tAc \"SELECT count(*) FROM _prisma_migrations\"" 2>/dev/null || echo "0")
         
         if [[ "$migration_count" -gt 0 ]]; then
-            # Database has migrations - clean them to allow fresh start
-            # This handles cases where migration files were deleted or changed
-            warn "Found ${migration_count} migration(s) in database — clearing for clean slate..."
-            eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations CASCADE;'" 2>/dev/null || true
-            log "Migration state cleared"
+            # Database has migrations - clean them completely
+            # This handles corrupted migration state - drop ALL tables for clean start
+            warn "Found ${migration_count} migration(s) — performing clean database reset..."
+            
+            # Get list of all tables and drop them
+            eval "$run_psql -c \"
+                DO \$\$
+                DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public')
+                    LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                END
+                \$\$;'" 2>/dev/null || true
+            
+            log "Database reset complete"
         else
             log "Migration state is clean"
         fi
