@@ -734,8 +734,8 @@ SNMP_POLLING_INTERVAL=300
 LOG_LEVEL=info
 
 # Frontend URLs
-NEXT_PUBLIC_API_URL=http://${api_domain}:${API_PORT}/api/v1
-NEXT_PUBLIC_WS_URL=http://${api_domain}:${API_PORT}
+NEXT_PUBLIC_API_URL=https://${api_domain}/api/v1
+NEXT_PUBLIC_WS_URL=https://${api_domain}
 
 # Notifications (optional)
 # TELEGRAM_BOT_TOKEN=
