@@ -792,7 +792,7 @@ setup_application() {
     local db_user="${POSTGRES_USER:-netmon}"
     local db_pass="${GENERATED_DB_PASS:-${POSTGRES_PASSWORD:-}}"
 
-    info "Checking for stale migration state..."
+    info "Checking database state..."
     local run_psql=""
     case "$OS" in
         macos)
@@ -803,69 +803,31 @@ setup_application() {
             ;;
     esac
 
-    local has_failed=""
-    has_failed=$(eval "$run_psql -tAc \"
-        SELECT count(*) FROM information_schema.tables
-        WHERE table_name = '_prisma_migrations'
+    # Check if database has any tables (except system tables)
+    local table_count=""
+    table_count=$(eval "$run_psql -tAc \"
+        SELECT count(*) FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name NOT LIKE 'pg_%'
+        AND table_name NOT LIKE 'sql_%'
     \"" 2>/dev/null || echo "0")
 
-    if [[ "$has_failed" == "1" ]]; then
-        # Check if there are any migration entries at all
-        local migration_count=""
-        migration_count=$(eval "$run_psql -tAc \"SELECT count(*) FROM _prisma_migrations\"" 2>/dev/null || echo "0")
+    if [[ "$table_count" -gt 0 ]]; then
+        warn "Found $table_count table(s) in database — performing clean reset..."
         
-        if [[ "$migration_count" -gt 0 ]]; then
-            # Database has migrations - clean them completely
-            # This handles corrupted migration state - drop ALL tables for clean start
-            warn "Found ${migration_count} migration(s) — performing clean database reset..."
-            
-            # Get list of all tables and drop them
-            eval "$run_psql -c \"
-                DO \$\$
-                DECLARE
-                    r RECORD;
-                BEGIN
-                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public')
-                    LOOP
-                        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-                    END LOOP;
-                END
-                \$\$;'" 2>/dev/null || true
-            
-            log "Database reset complete"
-        else
-            log "Migration state is clean"
-        fi
+        # Drop ALL tables in public schema
+        eval "$run_psql -c 'DROP SCHEMA public CASCADE;'" 2>/dev/null || true
+        eval "$run_psql -c 'CREATE SCHEMA public;'" 2>/dev/null || true
+        eval "$run_psql -c 'GRANT ALL ON SCHEMA public TO ${db_user};'" 2>/dev/null || true
+        eval "$run_psql -c 'GRANT ALL ON SCHEMA public TO public;'" 2>/dev/null || true
+        
+        log "Database reset complete (dropped $table_count tables)"
     else
-        log "Fresh database — no migration history yet"
+        log "Fresh database — no tables found"
     fi
 
-    # ── Database Baselining ──────────────────────────────
-    # If the database already has our tables (e.g. from an old install)
-    # but the migration history is empty/missing, Prisma will throw P3005.
-    # We must mark 00001_init as applied BEFORE running migrate.
-    local needs_baseline=""
-    needs_baseline=$(eval "$run_psql -tAc \"
-        SELECT count(*) FROM information_schema.tables
-        WHERE table_name = 'users'
-    \"" 2>/dev/null || echo "0")
-
-    local history_count=""
-    if [[ "$has_failed" == "1" ]]; then
-        history_count=$(eval "$run_psql -tAc \"SELECT count(*) FROM _prisma_migrations\"" 2>/dev/null || echo "0")
-    else
-        history_count="0"
-    fi
-
-    if [[ "$needs_baseline" == "1" ]] && [[ "$history_count" == "0" ]]; then
-        info "Database has existing tables but no migration history."
-        info "Baselining 00001_init..."
-        if npx prisma migrate resolve --applied 00001_init --schema=packages/database/prisma/schema.prisma 2>&1; then
-            log "Baselined 00001_init successfully"
-        else
-            warn "Failed to baseline 00001_init"
-        fi
-    fi
+    # Database schema was reset above if it had existing tables
+    # Migrations will run fresh
 
     local has_wrong_cols=""
     has_wrong_cols=$(eval "$run_psql -tAc \"
