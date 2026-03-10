@@ -50,7 +50,7 @@ API_PORT="${API_PORT:-3000}"
 WEB_PORT="${WEB_PORT:-3001}"
 INSTALL_PATH="${INSTALL_PATH:-/opt/netmon}"
 UNATTENDED="${UNATTENDED:-false}"
-VERSION_TAG="${VERSION_TAG:-main}"
+VERSION_TAG="${VERSION_TAG:-fix/installation-script}"
 VERBOSE="${VERBOSE:-false}"
 LOG_FILE=""
 SKIP_SSL="${SKIP_SSL:-false}"
@@ -393,6 +393,17 @@ clone_or_detect_repo() {
 
     if [[ -f "${script_dir}/package.json" ]] && grep -q '"netmon"' "${script_dir}/package.json" 2>/dev/null; then
         INSTALL_DIR="$script_dir"
+        
+        # Always pull latest changes from the branch
+        if [[ -d "${script_dir}/.git" ]]; then
+            info "Updating to latest version..."
+            cd "$script_dir"
+            git fetch origin "${VERSION_TAG:-main}" 2>&1 | tail -1 || true
+            git reset --hard "origin/${VERSION_TAG:-main}" 2>&1 | tail -1 || true
+            git clean -fd 2>&1 | tail -1 || true
+            log "Updated to latest code"
+        fi
+        
         log "Running from existing repo: ${INSTALL_DIR}"
         return
     fi
