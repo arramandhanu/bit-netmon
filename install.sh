@@ -10,6 +10,7 @@
 #  Options:
 #    --unattended     Non-interactive mode (use all defaults)
 #    --version TAG    Install a specific git tag/branch
+#    --upgrade        Upgrade app code only (no DB/env changes)
 #    --nginx          Set up Nginx reverse proxy only
 #    --help           Show help
 # ───────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ WEB_PORT="${WEB_PORT:-3001}"
 INSTALL_PATH="${INSTALL_PATH:-/opt/netmon}"
 UNATTENDED="${UNATTENDED:-false}"
 VERSION_TAG="${VERSION_TAG:-main}"
+UPGRADE_ONLY="${UPGRADE_ONLY:-false}"
 GENERATED_DB_PASS=""
 GENERATED_REDIS_PASS=""
 
@@ -262,6 +264,12 @@ clone_or_detect_repo() {
     # Check if we're already inside the repo
     if [[ -f "${script_dir}/package.json" ]] && grep -q '"netmon"' "${script_dir}/package.json" 2>/dev/null; then
         INSTALL_DIR="$script_dir"
+        if [[ -d "${script_dir}/.git" ]]; then
+            info "Updating existing repo to ${VERSION_TAG}..."
+            git -C "$script_dir" fetch origin "$VERSION_TAG" 2>&1 | tail -1 || true
+            git -C "$script_dir" reset --hard "origin/$VERSION_TAG" 2>&1 | tail -1 || true
+            git -C "$script_dir" clean -fd 2>&1 | tail -1 || true
+        fi
         log "Running from existing repo: ${INSTALL_DIR}"
         return
     fi
@@ -684,6 +692,31 @@ setup_application() {
     fi
 
     info "Building production assets (this may take a few minutes)..."
+    run_with_spinner "Building production assets..." npm run build
+    log "Production build complete"
+}
+
+setup_application_upgrade() {
+    section "Application Upgrade"
+
+    cd "$INSTALL_DIR"
+
+    if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+        error "No .env found at ${INSTALL_DIR}. Use full install first (without --upgrade)."
+    fi
+
+    info "Installing npm dependencies..."
+    run_with_spinner "Installing npm dependencies..." npm install --production=false
+    log "npm dependencies installed"
+
+    info "Generating Prisma client..."
+    if ! out=$(npm run db:generate 2>&1); then
+        echo -e "\n  ${RED}Failed to generate Prisma client. Output:${NC}\n$out\n"
+        error "Prisma client generation failed."
+    fi
+    log "Prisma client generated"
+
+    info "Building production assets..."
     run_with_spinner "Building production assets..." npm run build
     log "Production build complete"
 }
@@ -1250,6 +1283,19 @@ main() {
     detect_os
     check_root
     clone_or_detect_repo "$@"
+
+    if [[ "$UPGRADE_ONLY" == "true" ]]; then
+        section "Upgrade Mode"
+        info "Upgrade-only mode enabled: skipping DB, seed, env, and firewall steps"
+        install_prerequisites
+        install_nodejs
+        setup_application_upgrade
+        setup_systemd
+        verify_health
+        print_summary
+        return
+    fi
+
     check_resources
     install_prerequisites
     install_nodejs
@@ -1279,6 +1325,10 @@ while [[ $# -gt 0 ]]; do
             VERSION_TAG="${2:-main}"
             shift 2
             ;;
+        --upgrade)
+            UPGRADE_ONLY="true"
+            shift
+            ;;
         --nginx)
             detect_os
             # Set INSTALL_DIR for nginx-only mode
@@ -1293,6 +1343,7 @@ while [[ $# -gt 0 ]]; do
             echo "  Options:"
             echo "    --unattended      Non-interactive mode, accept all defaults"
             echo "    --version TAG     Install a specific git tag/branch (default: main)"
+            echo "    --upgrade         Upgrade code/services only (skip DB/env/firewall)"
             echo "    --nginx           Set up Nginx reverse proxy only"
             echo "    --help            Show this help"
             echo ""
