@@ -119,10 +119,10 @@ export function DeviceForm({
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     // Refs for scroll-to-section
-    const sectionRefs = {
-        general: useRef<any>(null),
-        snmp: useRef<any>(null),
-        polling: useRef<any>(null),
+    const sectionRefs: Record<string, React.RefObject<HTMLDivElement>> = {
+        general: useRef<HTMLDivElement>(null),
+        snmp: useRef<HTMLDivElement>(null),
+        polling: useRef<HTMLDivElement>(null),
     };
 
     const update = (field: keyof DeviceFormData, value: any) => {
@@ -193,7 +193,7 @@ export function DeviceForm({
 
     const scrollToSection = (id: string) => {
         setActiveSection(id);
-        sectionRefs[id as keyof typeof sectionRefs]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        sectionRefs[id]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     // Track active section on scroll

@@ -3,25 +3,14 @@
 #  NetMon — Bare-Metal Installation Script
 #  Supports: Ubuntu/Debian, RHEL/Fedora/CentOS, macOS
 #
-#  Features:
-#  - Pre-flight checks (ports, disk, services)
-#  - SNMP native dependencies
-#  - Dynamic service names
-#  - Database tuning (TimescaleDB, WAL)
-#  - Prisma validate before migrate
-#  - Verbose and log file options
-#  - Improved error handling
-#
 #  Quick install:
+#    curl -fsSL https://raw.githubusercontent.com/arramandhanu/bit-netmon/main/install.sh -o install.sh
 #    chmod +x install.sh && sudo ./install.sh
 #
 #  Options:
 #    --unattended     Non-interactive mode (use all defaults)
 #    --version TAG    Install a specific git tag/branch
 #    --nginx          Set up Nginx reverse proxy only
-#    --verbose        Enable verbose output
-#    --log-file FILE  Write logs to file
-#    --skip-ssl       Skip SSL certificate setup
 #    --help           Show help
 # ───────────────────────────────────────────────────────────
 
@@ -50,32 +39,19 @@ API_PORT="${API_PORT:-3000}"
 WEB_PORT="${WEB_PORT:-3001}"
 INSTALL_PATH="${INSTALL_PATH:-/opt/netmon}"
 UNATTENDED="${UNATTENDED:-false}"
-VERSION_TAG="${VERSION_TAG:-fix/installation-script}"
-VERBOSE="${VERBOSE:-false}"
-LOG_FILE=""
-SKIP_SSL="${SKIP_SSL:-false}"
+VERSION_TAG="${VERSION_TAG:-main}"
 GENERATED_DB_PASS=""
 GENERATED_REDIS_PASS=""
-POSTGRES_SERVICE=""
-REDIS_SERVICE=""
-
-# ─── Root Check ───────────────────────────────────────────
-
-check_root() {
-    if [[ "$OS" != "macos" ]] && [[ "$EUID" -ne 0 ]]; then
-        error "This script must be run as root on Linux. Use: sudo ./install.sh"
-    fi
-}
 
 # ─── Helpers ─────────────────────────────────────────────
 
 banner() {
     echo ""
     echo -e "${CYAN}${BOLD}"
-    echo "  ╔═══════════════════════════════════════════════════╗"
-    echo "  ║     NetMon Installation Script                   ║"
-    echo "  ║        Network Monitoring Platform               ║"
-    echo "  ╚═══════════════════════════════════════════════════╝"
+    echo "  ╔═══════════════════════════════════════════╗"
+    echo "  ║        NetMon Installation Script         ║"
+    echo "  ║        Network Monitoring Platform        ║"
+    echo "  ╚═══════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
 }
@@ -85,13 +61,6 @@ warn()    { echo -e "  ${YELLOW}⚠${NC} $1"; }
 error()   { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 info()    { echo -e "  ${BLUE}→${NC} $1"; }
 section() { echo ""; echo -e "  ${BOLD}━━━ $1 ━━━${NC}"; echo ""; }
-verbose() { [[ "$VERBOSE" == "true" ]] && echo -e "  ${DIM}$1${NC}" || true; }
-
-log_to_file() {
-    if [[ -n "$LOG_FILE" ]]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
-    fi
-}
 
 generate_secret() {
     local length="${1:-64}"
@@ -102,32 +71,42 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
+# Detect the machine's primary LAN IP address
 detect_local_ip() {
     local ip=""
     case "$OSTYPE" in
         darwin*)
+            # macOS: get IP of the active network interface
             ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
             ;;
         *)
+            # Linux: get the default route interface IP
             ip=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || echo "")
             ;;
     esac
-    echo "${ip:-localhost}"
+
+    # Fallback to localhost if detection fails
+    if [[ -z "$ip" ]]; then
+        ip="localhost"
+    fi
+
+    echo "$ip"
 }
 
-# ─── Spinner ─────────────────────────────────────────────
+# ─── Spinner (for long-running tasks) ────────────────────
 
 spinner() {
     local pid=$1
     local msg="${2:-Working...}"
     local spin='⣾⣽⣻⢿⡿⣟⣯⣷'
     local i=0
+
     while kill -0 "$pid" 2>/dev/null; do
         i=$(( (i + 1) % ${#spin} ))
         printf "\r  ${CYAN}%s${NC} %s" "${spin:$i:1}" "$msg"
         sleep 0.1
     done
-    printf "\r\033[K"
+    printf "\r\033[K"  # Clear the spinner line
     wait "$pid"
     return $?
 }
@@ -135,118 +114,9 @@ spinner() {
 run_with_spinner() {
     local msg="$1"
     shift
-    local tmp_log
-    tmp_log=$(mktemp)
-    "$@" >"$tmp_log" 2>&1 &
+    "$@" &>/dev/null &
     local pid=$!
-    if ! spinner "$pid" "$msg"; then
-        echo -e "\n  ${RED}Command failed: $*${NC}"
-        echo -e "  ${DIM}Output log:${NC}"
-        cat "$tmp_log"
-        rm -f "$tmp_log"
-        error "Step failed: $msg"
-    fi
-    rm -f "$tmp_log"
-}
-
-# ─── Pre-flight Checks ────────────────────────────────────
-
-preflight_checks() {
-    section "Pre-flight Checks"
-
-    # Check root
-    if [[ "$OS" != "macos" ]] && [[ "$EUID" -ne 0 ]]; then
-        error "This script must be run as root on Linux. Use: sudo ./install.sh"
-    fi
-
-    # Check required commands
-    local missing_cmds=()
-    for cmd in curl wget git openssl; do
-        if ! command_exists "$cmd"; then
-            missing_cmds+=("$cmd")
-        fi
-    done
-
-    if [[ ${#missing_cmds[@]} -gt 0 ]]; then
-        warn "Missing commands: ${missing_cmds[*]}"
-        info "Installing missing prerequisites..."
-        install_prerequisites
-    fi
-
-    # Check ports
-    info "Checking port availability..."
-    local ports=("$API_PORT" "$WEB_PORT" "5432" "6379")
-    local port_conflicts=()
-    for port in "${ports[@]}"; do
-        if command_exists lsof; then
-            if lsof -i ":$port" &>/dev/null; then
-                port_conflicts+=("$port")
-            fi
-        elif command_exists ss; then
-            if ss -tuln 2>/dev/null | grep -q ":$port "; then
-                port_conflicts+=("$port")
-            fi
-        fi
-    done
-
-    if [[ ${#port_conflicts[@]} -gt 0 ]]; then
-        warn "Ports in use: ${port_conflicts[*]}"
-        warn "Since this might be a re-installation or upgrade, continuing anyway..."
-    else
-        log "All required ports available ✓"
-    fi
-
-    # Check disk space (minimum 5GB)
-    local min_disk_gb=5
-    local disk_gb=0
-    if [[ "$OS" == "macos" ]]; then
-        disk_gb=$(df -g / | awk 'NR==2 {print $4}')
-    else
-        disk_gb=$(df -BG / | awk 'NR==2 {gsub(/G/,""); print $4}')
-    fi
-
-    if [[ "$disk_gb" -lt "$min_disk_gb" ]]; then
-        warn "Low disk space: ${disk_gb}GB (recommended: ≥${min_disk_gb}GB)"
-    else
-        log "Disk space: ${disk_gb}GB available ✓"
-    fi
-
-    # Detect existing services
-    detect_services
-    log "Pre-flight checks complete ✓"
-}
-
-detect_services() {
-    case "$OS" in
-        debian)
-            if command_exists systemctl; then
-                if systemctl list-units --type=service | grep -q 'postgresql.*\.service'; then
-                    POSTGRES_SERVICE="postgresql"
-                else
-                    POSTGRES_SERVICE="postgresql-${PG_VERSION}"
-                fi
-                if systemctl list-units --type=service | grep -q 'redis.*\.service'; then
-                    REDIS_SERVICE="redis-server"
-                else
-                    REDIS_SERVICE="redis"
-                fi
-            fi
-            ;;
-        rhel)
-            POSTGRES_SERVICE="postgresql-${PG_VERSION}"
-            REDIS_SERVICE="redis"
-            ;;
-        macos)
-            POSTGRES_SERVICE="postgresql@${PG_VERSION}"
-            REDIS_SERVICE="redis"
-            ;;
-        *)
-            POSTGRES_SERVICE="postgresql"
-            REDIS_SERVICE="redis"
-            ;;
-    esac
-    verbose "Detected PostgreSQL service: $POSTGRES_SERVICE"
-    verbose "Detected Redis service: $REDIS_SERVICE"
+    spinner "$pid" "$msg"
 }
 
 # ─── System Resource Check ───────────────────────────────
@@ -258,6 +128,7 @@ check_resources() {
     local min_disk_gb=3
     local warnings=0
 
+    # Check RAM
     local ram_mb=0
     if [[ "$OS" == "macos" ]]; then
         ram_mb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 ))
@@ -267,13 +138,14 @@ check_resources() {
 
     if [[ "$ram_mb" -gt 0 ]]; then
         if [[ "$ram_mb" -lt "$min_ram_mb" ]]; then
-            warn "Low RAM: ${ram_mb}MB (recommended: ≥${min_ram_mb}MB)"
+            warn "Low RAM: ${ram_mb}MB detected (recommended: ≥${min_ram_mb}MB)"
             warnings=$((warnings + 1))
         else
             log "RAM: ${ram_mb}MB ✓"
         fi
     fi
 
+    # Check disk space
     local disk_gb=0
     if [[ "$OS" == "macos" ]]; then
         disk_gb=$(df -g / | awk 'NR==2 {print $4}')
@@ -282,12 +154,13 @@ check_resources() {
     fi
 
     if [[ "$disk_gb" -lt "$min_disk_gb" ]]; then
-        warn "Low disk space: ${disk_gb}GB (recommended: ≥${min_disk_gb}GB)"
+        warn "Low disk space: ${disk_gb}GB available (recommended: ≥${min_disk_gb}GB)"
         warnings=$((warnings + 1))
     else
         log "Disk: ${disk_gb}GB available ✓"
     fi
 
+    # Check CPU cores
     local cores=0
     if [[ "$OS" == "macos" ]]; then
         cores=$(sysctl -n hw.ncpu)
@@ -297,9 +170,11 @@ check_resources() {
     log "CPU: ${cores} cores ✓"
 
     if [[ "$warnings" -gt 0 ]] && [[ "$UNATTENDED" == "false" ]]; then
+        echo ""
         read -rp "  Continue anyway? [Y/n] " response
         if [[ "${response,,}" == "n" ]]; then
-            error "Installation cancelled"
+            echo "  Installation cancelled."
+            exit 0
         fi
     fi
 }
@@ -308,11 +183,6 @@ check_resources() {
 
 detect_os() {
     section "Detecting Operating System"
-
-    if [[ -n "$OS" ]] && [[ "$OS" != "" ]]; then
-        log "OS already detected: $OS"
-        return 0
-    fi
 
     if [[ "$OSTYPE" == "darwin"* ]]; then
         OS="macos"
@@ -339,18 +209,19 @@ detect_os() {
                 log "Detected $PRETTY_NAME"
                 ;;
             *)
-                warn "Could not detect OS from /etc/os-release (ID=$ID)"
-                OS="debian"
-                PKG_MANAGER="apt"
-                SUDO_CMD="sudo"
-                log "Assuming Debian-based Linux"
+                error "Unsupported Linux distribution: $ID. Supported: Ubuntu, Debian, RHEL, CentOS, Fedora, Rocky"
                 ;;
         esac
     else
-        warn "/etc/os-release not found, assuming Debian"
-        OS="debian"
-        PKG_MANAGER="apt"
-        SUDO_CMD="sudo"
+        error "Unable to detect operating system"
+    fi
+}
+
+# ─── Root Check ──────────────────────────────────────────
+
+check_root() {
+    if [[ "$OS" != "macos" ]] && [[ "$EUID" -ne 0 ]]; then
+        error "This script must be run as root on Linux. Use: sudo ./install.sh"
     fi
 }
 
@@ -362,10 +233,10 @@ install_prerequisites() {
     case "$OS" in
         debian)
             $SUDO_CMD apt-get update -qq
-            $SUDO_CMD apt-get install -y -qq curl wget git openssl build-essential python3 lsb-release gnupg2 ca-certificates libsnmp-dev
+            $SUDO_CMD apt-get install -y -qq curl wget git openssl build-essential python3 lsb-release gnupg2 ca-certificates
             ;;
         rhel)
-            $SUDO_CMD $PKG_MANAGER install -y -q curl wget git openssl gcc gcc-c++ make python3 ca-certificates net-snmp-devel
+            $SUDO_CMD $PKG_MANAGER install -y -q curl wget git openssl gcc gcc-c++ make python3 ca-certificates
             ;;
         macos)
             if ! command_exists git; then
@@ -374,16 +245,13 @@ install_prerequisites() {
             if ! command_exists openssl; then
                 brew install openssl
             fi
-            if ! command_exists snmpget; then
-                brew install net-snmp
-            fi
             ;;
     esac
 
-    log "System prerequisites installed (curl, git, openssl, build tools, SNMP)"
+    log "System prerequisites installed (curl, git, openssl, build tools)"
 }
 
-# ─── Clone or Detect Repo ───────────────────────────────
+# ─── Clone or Detect Repo ────────────────────────────────
 
 clone_or_detect_repo() {
     section "Project Setup"
@@ -391,32 +259,21 @@ clone_or_detect_repo() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || script_dir="$(pwd)"
 
+    # Check if we're already inside the repo
     if [[ -f "${script_dir}/package.json" ]] && grep -q '"netmon"' "${script_dir}/package.json" 2>/dev/null; then
         INSTALL_DIR="$script_dir"
-        
-        # Always pull latest changes from the branch
-        if [[ -d "${script_dir}/.git" ]]; then
-            info "Updating to latest version..."
-            cd "$script_dir"
-            git fetch origin "${VERSION_TAG:-main}" 2>&1 | tail -1 || true
-            git reset --hard "origin/${VERSION_TAG:-main}" 2>&1 | tail -1 || true
-            git clean -fd 2>&1 | tail -1 || true
-            log "Updated to latest code"
-        fi
-        
         log "Running from existing repo: ${INSTALL_DIR}"
         return
     fi
 
+    # Downloaded standalone via curl — clone the repo
     info "Standalone install detected — cloning repository..."
 
     if [[ -d "${INSTALL_PATH}" ]] && [[ -f "${INSTALL_PATH}/package.json" ]]; then
         warn "Existing installation found at ${INSTALL_PATH}"
         info "Pulling latest changes..."
         cd "$INSTALL_PATH"
-        git fetch origin "$VERSION_TAG" 2>&1 | tail -1
-        git reset --hard "origin/$VERSION_TAG" 2>&1 | tail -1
-        git clean -fd 2>&1 | tail -1
+        git pull origin "$VERSION_TAG" 2>&1 | tail -1
     else
         info "Cloning to ${INSTALL_PATH}..."
         git clone --branch "$VERSION_TAG" "$REPO_URL" "$INSTALL_PATH"
@@ -425,6 +282,7 @@ clone_or_detect_repo() {
     INSTALL_DIR="$INSTALL_PATH"
     log "Repository ready at ${INSTALL_DIR}"
 
+    # Re-execute from the cloned repo
     info "Re-executing installer from cloned repo..."
     exec bash "${INSTALL_DIR}/install.sh" "$@"
 }
@@ -501,10 +359,12 @@ install_postgresql() {
         log "PostgreSQL ${PG_VERSION} installed"
     fi
 
+    # Install TimescaleDB extension
     info "Installing TimescaleDB extension..."
 
     case "$OS" in
         debian)
+            # Official packagecloud method: https://packagecloud.io/timescale/timescaledb/install
             $SUDO_CMD mkdir -p /etc/apt/keyrings
             curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey | \
                 $SUDO_CMD gpg --dearmor --yes -o /etc/apt/keyrings/timescale_timescaledb-archive-keyring.gpg
@@ -535,6 +395,7 @@ TSEOF
             ;;
     esac
 
+    # Enable TimescaleDB in postgresql.conf
     if [[ "$OS" != "macos" ]]; then
         local pg_conf
         pg_conf=$(find /etc/postgresql -name "postgresql.conf" 2>/dev/null | head -1)
@@ -546,17 +407,10 @@ TSEOF
                 echo "shared_preload_libraries = 'timescaledb'" | $SUDO_CMD tee -a "$pg_conf" >/dev/null
                 log "TimescaleDB added to shared_preload_libraries"
             fi
-            if ! grep -q "timescaledb.telemetry_level" "$pg_conf"; then
-                echo "timescaledb.telemetry_level = 'off'" | $SUDO_CMD tee -a "$pg_conf" >/dev/null
-                log "TimescaleDB telemetry disabled"
-            fi
-            if ! grep -q "max_wal_size" "$pg_conf"; then
-                echo "max_wal_size = '1GB'" | $SUDO_CMD tee -a "$pg_conf" >/dev/null
-                log "WAL size tuned for hypertables"
-            fi
         fi
     fi
 
+    # Fix pg_hba.conf for password auth (RHEL defaults to ident)
     if [[ "$OS" == "rhel" ]]; then
         local pg_hba
         pg_hba=$(find /var/lib/pgsql -name "pg_hba.conf" 2>/dev/null | head -1)
@@ -566,14 +420,15 @@ TSEOF
         fi
     fi
 
+    # Start/restart PostgreSQL
     case "$OS" in
         debian)
             $SUDO_CMD systemctl enable postgresql
             $SUDO_CMD systemctl restart postgresql
             ;;
         rhel)
-            $SUDO_CMD systemctl enable ${POSTGRES_SERVICE}
-            $SUDO_CMD systemctl restart ${POSTGRES_SERVICE}
+            $SUDO_CMD systemctl enable postgresql-${PG_VERSION}
+            $SUDO_CMD systemctl restart postgresql-${PG_VERSION}
             ;;
         macos)
             brew services restart postgresql@${PG_VERSION}
@@ -610,10 +465,12 @@ install_redis() {
         log "Redis installed"
     fi
 
+    # Configure Redis password
     if [[ "$OS" != "macos" ]]; then
         local redis_conf
         redis_conf=$(find /etc -name "redis.conf" 2>/dev/null | head -1)
         if [[ -n "$redis_conf" ]]; then
+            # Set password
             if grep -q "^# requirepass " "$redis_conf" || grep -q "^requirepass " "$redis_conf"; then
                 $SUDO_CMD sed -i "s/^# requirepass .*/requirepass ${GENERATED_REDIS_PASS}/" "$redis_conf"
                 $SUDO_CMD sed -i "s/^requirepass .*/requirepass ${GENERATED_REDIS_PASS}/" "$redis_conf"
@@ -624,10 +481,11 @@ install_redis() {
         fi
     fi
 
+    # Start & enable Redis
     case "$OS" in
         debian|rhel)
-            $SUDO_CMD systemctl enable ${REDIS_SERVICE} 2>/dev/null || true
-            $SUDO_CMD systemctl restart ${REDIS_SERVICE} 2>/dev/null || true
+            $SUDO_CMD systemctl enable redis-server 2>/dev/null || $SUDO_CMD systemctl enable redis 2>/dev/null || true
+            $SUDO_CMD systemctl restart redis-server 2>/dev/null || $SUDO_CMD systemctl restart redis 2>/dev/null || true
             ;;
         macos)
             brew services start redis
@@ -672,9 +530,11 @@ setup_database() {
     log "Database '${db_name}' ready (user: ${db_user})"
 }
 
-# ─── Environment File ────────────────────────────────────
+# ─── Environment File ───────────────────────────────────
+
 generate_env() {
     section "Environment Configuration"
+
     local env_file="${INSTALL_DIR}/.env"
     local db_host="127.0.0.1"
     local db_name="${POSTGRES_DB:-netmon}"
@@ -685,32 +545,20 @@ generate_env() {
     local redis_pass="${GENERATED_REDIS_PASS:-$(generate_secret 32)}"
     local jwt_secret
     local encryption_key
-    local api_domain="${API_DOMAIN:-localhost}"
-    
-    if [[ "$api_domain" == "localhost" ]]; then
-        info "No API_DOMAIN set — using localhost for local access"
-        info "Set API_DOMAIN=your-server-ip or domain for network access"
-    fi
-    
-    # Generate admin password (auto-generated by default, or use env var)
-    local admin_password="${ADMIN_PASSWORD:-$(generate_secret 12)}"
-    GENERATED_ADMIN_PASS="$admin_password"
+    local api_domain="${API_DOMAIN:-$(detect_local_ip)}"
 
     jwt_secret="$(generate_secret 64)"
     encryption_key="$(generate_secret 32)"
+
     if [[ -f "$env_file" ]]; then
         warn ".env file already exists — backing up to .env.backup"
         cp "$env_file" "${env_file}.backup.$(date +%s)"
     fi
+
     cat > "$env_file" <<EOF
 # ─── NetMon Environment Configuration ───────────────────
 # Generated on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # ─────────────────────────────────────────────────────────
-
-# App Admin Account (used during seed)
-ADMIN_USERNAME=admin
-ADMIN_EMAIL=admin@${api_domain:-localhost}
-ADMIN_PASSWORD=${admin_password}
 
 # Database
 POSTGRES_USER=${db_user}
@@ -745,8 +593,8 @@ SNMP_POLLING_INTERVAL=300
 LOG_LEVEL=info
 
 # Frontend URLs
-NEXT_PUBLIC_API_URL=https://${api_domain}/api/v1
-NEXT_PUBLIC_WS_URL=https://${api_domain}
+NEXT_PUBLIC_API_URL=http://${api_domain}:${API_PORT}/api/v1
+NEXT_PUBLIC_WS_URL=http://${api_domain}:${API_PORT}
 
 # Notifications (optional)
 # TELEGRAM_BOT_TOKEN=
@@ -757,8 +605,7 @@ NEXT_PUBLIC_WS_URL=https://${api_domain}
 # SMTP_PASS=
 EOF
 
-    chmod 640 "$env_file"
-    $SUDO_CMD chown "${SUDO_USER:-root}:root" "$env_file" 2>/dev/null || true
+    chmod 600 "$env_file"
     log ".env file generated at ${env_file}"
     info "Database password: ${db_pass}"
     info "Redis password:    ${redis_pass}"
@@ -783,161 +630,22 @@ setup_application() {
     fi
     log "Prisma client generated"
 
-    # Forcefully remove the old timescaledb migration folder if it exists.
-    # We moved this to 00002_timescaledb_setup. If the folder remains (e.g., from
-    # a git pull leaving untracked files), Prisma will fail with P3015.
-    rm -rf packages/database/prisma/migrations/timescaledb
-
-    local db_name="${POSTGRES_DB:-netmon}"
-    local db_user="${POSTGRES_USER:-netmon}"
-    local db_pass="${GENERATED_DB_PASS:-${POSTGRES_PASSWORD:-}}"
-
-    info "Checking database state..."
-    local run_psql=""
-    case "$OS" in
-        macos)
-            run_psql="psql -d $db_name"
-            ;;
-        *)
-            run_psql="PGPASSWORD=$db_pass psql -U $db_user -h 127.0.0.1 -d $db_name"
-            ;;
-    esac
-
-    # Check if database has any tables (except system tables)
-    local table_count=""
-    table_count=$(eval "$run_psql -tAc \"
-        SELECT count(*) FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name NOT LIKE 'pg_%'
-        AND table_name NOT LIKE 'sql_%'
-    \"" 2>/dev/null || echo "0")
-
-    if [[ "$table_count" -gt 0 ]]; then
-        warn "Found $table_count table(s) in database — performing clean reset..."
-        
-        # Drop ALL tables in public schema
-        eval "$run_psql -c 'DROP SCHEMA public CASCADE;'" 2>/dev/null || true
-        eval "$run_psql -c 'CREATE SCHEMA public;'" 2>/dev/null || true
-        eval "$run_psql -c 'GRANT ALL ON SCHEMA public TO ${db_user};'" 2>/dev/null || true
-        eval "$run_psql -c 'GRANT ALL ON SCHEMA public TO public;'" 2>/dev/null || true
-        
-        log "Database reset complete (dropped $table_count tables)"
-    else
-        log "Fresh database — no tables found"
-    fi
-
-    # Database schema was reset above if it had existing tables
-    # Migrations will run fresh
-
-    local has_wrong_cols=""
-    has_wrong_cols=$(eval "$run_psql -tAc \"
-        SELECT count(*) FROM information_schema.columns
-        WHERE table_name = 'device_metrics' AND column_name = 'cpu_usage'
-    \"" 2>/dev/null || echo "0")
-
-    if [[ "$has_wrong_cols" == "1" ]]; then
-        warn "Found device_metrics with wrong column names — dropping old tables..."
-        eval "$run_psql -c '
-            DROP MATERIALIZED VIEW IF EXISTS device_metrics_hourly CASCADE;
-            DROP MATERIALIZED VIEW IF EXISTS device_metrics_daily CASCADE;
-            DROP MATERIALIZED VIEW IF EXISTS interface_metrics_hourly CASCADE;
-            DROP MATERIALIZED VIEW IF EXISTS interface_metrics_daily CASCADE;
-            DROP TABLE IF EXISTS device_metrics CASCADE;
-            DROP TABLE IF EXISTS interface_metrics CASCADE;
-            DROP TABLE IF EXISTS wireless_metrics CASCADE;
-        '" 2>/dev/null || true
-        log "Old hypertable objects removed"
-    fi
-
-    info "Validating Prisma schema..."
-    if ! out=$(npx prisma validate --schema=packages/database/prisma/schema.prisma 2>&1); then
-        warn "Prisma schema validation warnings: $out"
-    else
-        log "Prisma schema valid ✓"
-    fi
-
     info "Running database migrations..."
-    local migrate_attempts=0
-    local migrate_max=5
-    local migrate_ok=false
-
-    while [[ "$migrate_attempts" -lt "$migrate_max" ]]; do
-        migrate_attempts=$((migrate_attempts + 1))
-
-        if out=$(npm run db:migrate 2>&1); then
-            migrate_ok=true
-            break
-        fi
-
-        if echo "$out" | grep -q "P3009"; then
-            warn "Failed migration detected (attempt ${migrate_attempts}/${migrate_max})..."
-            local failed_migration
-            failed_migration=$(echo "$out" | grep -oP 'The `\K[^`]+(?=` migration .* failed)' 2>/dev/null || echo "")
-            if [[ -z "$failed_migration" ]]; then
-                failed_migration=$(echo "$out" | sed -n 's/.*The `\([^`]*\)` migration .* failed.*/\1/p')
-            fi
-            if [[ -n "$failed_migration" ]]; then
-                info "Resolving: ${failed_migration}..."
-                if npx prisma migrate resolve --rolled-back "$failed_migration" --schema=packages/database/prisma/schema.prisma 2>&1; then
-                    log "Marked '${failed_migration}' as rolled-back"
-                    continue
-                fi
-            fi
-        fi
-
-        if echo "$out" | grep -q "P3018"; then
-            warn "Migration apply error (attempt ${migrate_attempts}/${migrate_max})..."
-            echo -e "  ${DIM}Error details:\n$out${NC}"
-            local apply_failed
-            apply_failed=$(echo "$out" | sed -n 's/.*Migration name: \(.*\)/\1/p' | tr -d '[:space:]')
-            if [[ -n "$apply_failed" ]]; then
-                # Special case: If 00001_init fails because tables already exist from an older
-                # partial install, we mark it as APPLIED so we can just move forward.
-                if [[ "$apply_failed" == "00001_init" ]] && echo "$out" | grep -qi "already exists"; then
-                    info "Tables already exist from previous install — marking 00001_init as applied..."
-                    if npx prisma migrate resolve --applied "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
-                        log "Marked '${apply_failed}' as applied"
-                        continue
-                    fi
-                else
-                    info "Resolving: ${apply_failed}..."
-                    if npx prisma migrate resolve --rolled-back "$apply_failed" --schema=packages/database/prisma/schema.prisma 2>&1; then
-                        log "Marked '${apply_failed}' as rolled-back"
-                        continue
-                    fi
-                fi
-            fi
-        fi
-
-        # P3015: Could not find migration file
-        if echo "$out" | grep -q "P3015"; then
-            warn "Missing migration file detected — cleaning up migration state..."
-            eval "$run_psql -c 'DROP TABLE IF EXISTS _prisma_migrations CASCADE;'" 2>/dev/null || true
-            log "Migration state cleared — will retry"
-            continue
-        fi
-
-        echo -e "\n  ${RED}Database migration failed. Output:${NC}\n$out\n"
-        error "Database migration failed after ${migrate_attempts} attempt(s)."
-    done
-
-    if [[ "$migrate_ok" != "true" ]]; then
-        error "Database migration failed after ${migrate_max} attempts."
+    if ! out=$(npm run db:migrate 2>&1); then
+        echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
+        error "Database migration failed."
     fi
     log "Database migrations applied"
 
     info "Seeding database with default admin user..."
-    set -a
-    source "${INSTALL_DIR}/.env"
-    set +a
     if ! out=$(npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1); then
         warn "Seeding skipped or failed — you may need to create an admin user manually."
-        verbose "Seed output: $out"
+        echo -e "  ${DIM}Seed output:\n$out${NC}"
     else
-        log "Database seeded (admin / ${ADMIN_PASSWORD:-admin})"
+        log "Database seeded (default: admin / admin)"
     fi
 
-    info "Building production assets..."
+    info "Building production assets (this may take a few minutes)..."
     run_with_spinner "Building production assets..." npm run build
     log "Production build complete"
 }
@@ -959,6 +667,7 @@ setup_firewall() {
         $SUDO_CMD ufw allow 80/tcp comment "HTTP" 2>/dev/null || true
         $SUDO_CMD ufw allow 443/tcp comment "HTTPS" 2>/dev/null || true
 
+        # Enable UFW if not active
         if ! $SUDO_CMD ufw status | grep -q "Status: active"; then
             if [[ "$UNATTENDED" == "true" ]]; then
                 echo "y" | $SUDO_CMD ufw enable 2>/dev/null || true
@@ -983,7 +692,7 @@ setup_firewall() {
     fi
 }
 
-# ─── Systemd Services ────────────────────────────────────
+# ─── Systemd Services ───────────────────────────────────
 
 setup_systemd() {
     section "Systemd Services"
@@ -998,19 +707,18 @@ setup_systemd() {
     local node_path
     node_path="$(which node)"
 
+    # API Service
     cat > "${service_dir}/netmon-api.service" <<EOF
 [Unit]
 Description=NetMon API Server
 Documentation=https://github.com/arramandhanu/bit-netmon
-After=network.target ${POSTGRES_SERVICE}.service ${REDIS_SERVICE}.service
-Requires=${POSTGRES_SERVICE}.service ${REDIS_SERVICE}.service
+After=network.target postgresql.service redis.service
+Requires=postgresql.service redis.service
 
 [Service]
 Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}
-Environment="NODE_ENV=production"
-Environment="API_PORT=${API_PORT}"
 EnvironmentFile=${INSTALL_DIR}/.env
 ExecStart=${node_path} apps/api/dist/main.js
 Restart=always
@@ -1019,6 +727,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=netmon-api
 
+# Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
@@ -1029,6 +738,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+    # Web Service
     cat > "${service_dir}/netmon-web.service" <<EOF
 [Unit]
 Description=NetMon Web Frontend
@@ -1039,15 +749,15 @@ After=network.target netmon-api.service
 Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}/apps/web
-Environment="NODE_ENV=production"
-Environment="WEB_PORT=${WEB_PORT}"
-ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p ${WEB_PORT}
+EnvironmentFile=${INSTALL_DIR}/.env
+ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p \${WEB_PORT:-3001}
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=netmon-web
 
+# Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
@@ -1058,6 +768,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+    # Reload and enable
     systemctl daemon-reload
     systemctl enable netmon-api netmon-web
     systemctl start netmon-api
@@ -1078,6 +789,7 @@ setup_launchd() {
     node_path="$(which node)"
     local run_user="${USER}"
 
+    # API plist
     cat > "${plist_dir}/com.netmon.api.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1111,6 +823,7 @@ setup_launchd() {
 </plist>
 EOF
 
+    # Web plist
     cat > "${plist_dir}/com.netmon.web.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1142,6 +855,7 @@ EOF
 </plist>
 EOF
 
+    # Load services
     sudo launchctl load "${plist_dir}/com.netmon.api.plist" 2>/dev/null || true
     sleep 3
     sudo launchctl load "${plist_dir}/com.netmon.web.plist" 2>/dev/null || true
@@ -1206,7 +920,7 @@ setup_watchdog() {
 # NetMon Watchdog — auto-restart crashed services
 # Runs every 5 minutes via cron
 
-API_URL="http://localhost:${API_PORT:-3000}/health"
+API_URL="http://localhost:${API_PORT:-3000}/api/v1/health"
 LOG="/var/log/netmon-watchdog.log"
 
 check_and_restart() {
@@ -1226,6 +940,7 @@ check_and_restart() {
 check_and_restart netmon-api
 check_and_restart netmon-web
 
+# Optional: check HTTP health
 if command -v curl &>/dev/null; then
     if ! curl -sf "$API_URL" &>/dev/null; then
         echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] WARN: API health check failed — restarting..." >> "$LOG"
@@ -1236,6 +951,7 @@ WATCHDOG
 
     chmod +x "$watchdog_script"
 
+    # Add cron job (every 5 minutes)
     local cron_entry="*/5 * * * * ${watchdog_script}"
     (crontab -l 2>/dev/null | grep -v "netmon.*watchdog" ; echo "$cron_entry") | crontab -
 
@@ -1253,7 +969,7 @@ verify_health() {
     local retry=0
 
     while [[ $retry -lt $max_retries ]]; do
-        if curl -sf "http://localhost:${API_PORT}/health" &>/dev/null; then
+        if curl -sf "http://localhost:${API_PORT}/api/v1/health" &>/dev/null; then
             log "API health check passed ✓"
             break
         fi
@@ -1266,6 +982,7 @@ verify_health() {
         info "Check logs: sudo journalctl -u netmon-api -f"
     fi
 
+    # Check web
     retry=0
     while [[ $retry -lt 10 ]]; do
         if curl -sf "http://localhost:${WEB_PORT}" &>/dev/null; then
@@ -1313,8 +1030,7 @@ setup_nginx() {
 
     cat > "$nginx_conf" <<EOF
 # NetMon — Nginx Reverse Proxy
-# NetMon — Nginx Reverse Proxy
-# Generated by install.sh
+# Generated by install.sh on $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 upstream netmon_api {
     server 127.0.0.1:${API_PORT};
@@ -1328,6 +1044,7 @@ server {
     listen 80;
     server_name ${domain};
 
+    # ─── API ─────────────────────────
     location /api/ {
         proxy_pass http://netmon_api;
         proxy_http_version 1.1;
@@ -1340,6 +1057,7 @@ server {
         proxy_read_timeout 300s;
     }
 
+    # ─── WebSocket ───────────────────
     location /socket.io/ {
         proxy_pass http://netmon_api;
         proxy_http_version 1.1;
@@ -1349,6 +1067,7 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
     }
 
+    # ─── Web Frontend ────────────────
     location / {
         proxy_pass http://netmon_web;
         proxy_http_version 1.1;
@@ -1360,6 +1079,7 @@ server {
 }
 EOF
 
+    # Enable site (Debian)
     if [[ "$OS" == "debian" ]]; then
         ln -sf "$nginx_conf" /etc/nginx/sites-enabled/netmon
         rm -f /etc/nginx/sites-enabled/default
@@ -1378,11 +1098,8 @@ EOF
         warn "Nginx config has errors — check: nginx -t"
     }
 
-    if [[ "$SKIP_SSL" == "false" ]]; then
-        setup_ssl "$domain"
-    else
-        info "SSL setup skipped (--skip-ssl)"
-    fi
+    # Auto SSL with certbot
+    setup_ssl "$domain"
 }
 
 # ─── SSL Auto-Setup ─────────────────────────────────────
@@ -1394,6 +1111,7 @@ setup_ssl() {
         return
     fi
 
+    # Check if cert already exists
     if [[ -d "/etc/letsencrypt/live/${domain}" ]]; then
         log "SSL certificate already exists for ${domain}"
         return
@@ -1408,110 +1126,94 @@ setup_ssl() {
         fi
     fi
 
-    info "Installing certbot..."
-    case "$OS" in
-        debian) $SUDO_CMD apt-get install -y -qq certbot python3-certbot-nginx ;;
-        rhel)   $SUDO_CMD $PKG_MANAGER install -y -q certbot python3-certbot-nginx ;;
-        macos)  brew install certbot ;;
-    esac
+    # Install certbot
+    if ! command_exists certbot; then
+        info "Installing Certbot..."
+        case "$OS" in
+            debian)
+                $SUDO_CMD apt-get install -y -qq certbot python3-certbot-nginx
+                ;;
+            rhel)
+                $SUDO_CMD $PKG_MANAGER install -y -q certbot python3-certbot-nginx
+                ;;
+            macos)
+                brew install certbot
+                ;;
+        esac
+    fi
 
-    if command_exists certbot; then
-        info "Obtaining SSL certificate for ${domain}..."
-        if certbot --nginx -d "$domain" --non-interactive --agree-tos --email "admin@${domain}" 2>&1; then
-            log "SSL certificate obtained ✓"
-        else
-            warn "SSL certificate failed — continue without HTTPS"
-        fi
+    # Run certbot
+    info "Obtaining SSL certificate for ${domain}..."
+    if [[ "$UNATTENDED" == "true" ]]; then
+        $SUDO_CMD certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>&1 | tail -3 || {
+            warn "Certbot failed — set up SSL manually: sudo certbot --nginx -d ${domain}"
+        }
+    else
+        $SUDO_CMD certbot --nginx -d "$domain" || {
+            warn "Certbot failed — set up SSL manually later"
+        }
+    fi
+
+    # Auto-renewal cron
+    if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
+        (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
+        log "SSL auto-renewal cron configured (daily at 3am)"
     fi
 }
 
-# ─── Usage ──────────────────────────────────────────────
+# ─── Summary ─────────────────────────────────────────────
 
-usage() {
-    banner
-    cat <<EOF
-Usage: sudo ./install.sh [OPTIONS]
+print_summary() {
+    echo ""
+    echo -e "${GREEN}${BOLD}"
+    echo "  ╔═══════════════════════════════════════════╗"
+    echo "  ║       Installation Complete! 🎉           ║"
+    echo "  ╚═══════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+    echo -e "  ${BOLD}Access your NetMon instance:${NC}"
+    echo ""
+    echo -e "  ${CYAN}Web UI:${NC}      http://localhost:${WEB_PORT}"
+    echo -e "  ${CYAN}API:${NC}         http://localhost:${API_PORT}/api/v1"
+    echo ""
+    echo -e "  ${BOLD}Default Login:${NC}"
+    echo -e "  ${CYAN}Admin:${NC}       admin / admin"
+    echo ""
+    echo -e "  ${BOLD}Generated Credentials:${NC}"
+    echo -e "  ${CYAN}DB Password:${NC}    ${GENERATED_DB_PASS}"
+    echo -e "  ${CYAN}Redis Password:${NC} ${GENERATED_REDIS_PASS}"
+    echo ""
+    echo -e "  ${BOLD}Useful Commands:${NC}"
+    echo ""
 
-Options:
-  --unattended     Non-interactive mode (use all defaults)
-  --version TAG    Install a specific git tag/branch (default: main)
-  --nginx          Set up Nginx reverse proxy only
-  --verbose        Enable verbose output
-  --log-file FILE  Write logs to file
-  --skip-ssl       Skip SSL certificate setup
-  --help           Show this help message
+    if [[ "$OS" != "macos" ]]; then
+        echo -e "  ${CYAN}Status:${NC}      sudo systemctl status netmon-api netmon-web"
+        echo -e "  ${CYAN}Logs:${NC}        sudo journalctl -u netmon-api -f"
+        echo -e "  ${CYAN}Restart:${NC}     sudo systemctl restart netmon-api netmon-web"
+    else
+        echo -e "  ${CYAN}Status:${NC}      sudo launchctl list | grep netmon"
+        echo -e "  ${CYAN}Logs:${NC}        tail -f /var/log/netmon-api.log"
+        echo -e "  ${CYAN}Restart:${NC}     sudo launchctl kickstart -k system/com.netmon.api"
+    fi
 
-Environment Variables:
-  API_PORT         API port (default: 3000)
-  WEB_PORT         Web port (default: 3001)
-  API_DOMAIN       Domain for Nginx/SSL setup
-  POSTGRES_DB      Database name (default: netmon)
-  POSTGRES_USER    Database user (default: netmon)
-  INSTALL_PATH     Installation directory (default: /opt/netmon)
-
-Examples:
-  # Interactive install
-  sudo ./install.sh
-
-  # Non-interactive with custom ports
-  sudo API_PORT=8080 WEB_PORT=8081 ./install.sh --unattended
-
-  # With Nginx and SSL
-  sudo API_DOMAIN=netmon.example.com ./install.sh
-
-  # With log file
-  sudo ./install.sh --verbose --log-file /var/log/netmon-install.log
-EOF
-    exit 0
+    echo -e "  ${CYAN}Update:${NC}      sudo ./scripts/update.sh"
+    echo -e "  ${CYAN}Uninstall:${NC}   sudo ./scripts/uninstall.sh"
+    echo ""
+    echo -e "  ${BOLD}Config:${NC}      ${INSTALL_DIR}/.env"
+    echo ""
+    echo -e "  ${YELLOW}⚠ Change the default admin password immediately after login!${NC}"
+    echo ""
 }
 
-# ─── Main ───────────────────────────────────────────────
+# ─── Main ────────────────────────────────────────────────
 
 main() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --unattended) UNATTENDED="true" ;;
-            --version) VERSION_TAG="$2"; shift ;;
-            --nginx) MODE="nginx" ;;
-            --verbose) VERBOSE="true" ;;
-            --log-file) LOG_FILE="$2"; shift ;;
-            --skip-ssl) SKIP_SSL="true" ;;
-            --help|-h) usage ;;
-            *) error "Unknown option: $1" ;;
-        esac
-        shift
-    done
-
-    if [[ -n "$LOG_FILE" ]]; then
-        touch "$LOG_FILE" 2>/dev/null || true
-        exec > >(tee -a "$LOG_FILE") 2>&1
-    fi
-
-    log_to_file "Starting NetMon installation"
-
     banner
-    echo "[DEBUG] Starting detect_os..."
     detect_os
-    echo "[DEBUG] detect_os completed, OS=$OS"
     check_root
-    echo "[DEBUG] check_root completed"
-
-    if [[ "$MODE" == "nginx" ]]; then
-        clone_or_detect_repo
-        detect_services
-        setup_nginx
-        exit 0
-    fi
-
-    echo "[DEBUG] Starting preflight_checks..."
-    preflight_checks
-    echo "[DEBUG] preflight_checks completed"
-    echo "[DEBUG] Starting check_resources..."
+    clone_or_detect_repo "$@"
     check_resources
-    echo "[DEBUG] check_resources completed"
     install_prerequisites
-    clone_or_detect_repo
-    detect_services
     install_nodejs
     install_postgresql
     install_redis
@@ -1519,50 +1221,65 @@ main() {
     generate_env
     setup_application
     setup_firewall
-    
-    # Fix ownership for install directory
-    $SUDO_CMD chown -R "${SUDO_USER:-root}:root" "${INSTALL_DIR}" 2>/dev/null || true
-    $SUDO_CMD chmod -R 755 "${INSTALL_DIR}" 2>/dev/null || true
-    $SUDO_CMD chown "${SUDO_USER:-root}:root" "${INSTALL_DIR}/.env" 2>/dev/null || true
-    $SUDO_CMD chmod 640 "${INSTALL_DIR}/.env" 2>/dev/null || true
-    
     setup_systemd
-    
     setup_logrotate
     setup_watchdog
+    setup_nginx
     verify_health
-
-    section "Installation Complete!"
-    echo "  NetMon is now installed and running."
-    echo ""
-    echo "  Access URLs:"
-    echo "    API:   http://localhost:${API_PORT}"
-    echo "    Web:   http://localhost:${WEB_PORT}"
-    echo "    Health: http://localhost:${API_PORT}/health"
-    echo ""
-    echo "  Admin credentials:"
-    echo -e "    Username: ${CYAN}admin${NC}"
-    echo -e "    Password: ${YELLOW}${GENERATED_ADMIN_PASS}${NC}"
-    echo ""
-    echo "  Manage services:"
-    echo "    sudo systemctl status netmon-api netmon-web"
-    echo "    sudo journalctl -u netmon-api -f"
-    echo ""
-    warn "Save your .env file credentials — they won't be shown again!"
-    echo ""
+    print_summary
 }
 
-MODE=""
-detect_os_early() {
-    [[ "$OSTYPE" == "darwin"* ]] && OS="macos" && return 0
-    [[ -f /etc/os-release ]] || return 1
-    . /etc/os-release
-    case "$ID" in
-        ubuntu|debian|pop|linuxmint) OS="debian"; PKG_MANAGER="apt"; SUDO_CMD="sudo" ;;
-        rhel|centos|rocky|almalinux|fedora) OS="rhel"; PKG_MANAGER="dnf"; SUDO_CMD="sudo" ;;
-        *) return 1 ;;
+# ─── Parse Arguments ─────────────────────────────────────
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --unattended)
+            UNATTENDED="true"
+            shift
+            ;;
+        --version)
+            VERSION_TAG="${2:-main}"
+            shift 2
+            ;;
+        --nginx)
+            detect_os
+            # Set INSTALL_DIR for nginx-only mode
+            INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+            setup_nginx
+            exit 0
+            ;;
+        --help|-h)
+            echo ""
+            echo "  Usage: sudo ./install.sh [OPTIONS]"
+            echo ""
+            echo "  Options:"
+            echo "    --unattended      Non-interactive mode, accept all defaults"
+            echo "    --version TAG     Install a specific git tag/branch (default: main)"
+            echo "    --nginx           Set up Nginx reverse proxy only"
+            echo "    --help            Show this help"
+            echo ""
+            echo "  Environment variables:"
+            echo "    API_DOMAIN          Domain for Nginx + SSL (e.g. netmon.example.com)"
+            echo "    API_PORT            API port (default: 3000)"
+            echo "    WEB_PORT            Web port (default: 3001)"
+            echo "    INSTALL_PATH        Installation directory (default: /opt/netmon)"
+            echo "    POSTGRES_USER       DB user (default: netmon)"
+            echo "    POSTGRES_PASSWORD   DB password (auto-generated if empty)"
+            echo "    POSTGRES_DB         DB name (default: netmon)"
+            echo ""
+            echo "  Examples:"
+            echo "    sudo ./install.sh                              # Interactive install"
+            echo "    sudo ./install.sh --unattended                 # Fully automatic"
+            echo "    sudo ./install.sh --version v1.0.0             # Install specific version"
+            echo "    API_DOMAIN=netmon.example.com sudo ./install.sh # With Nginx + SSL"
+            echo ""
+            exit 0
+            ;;
+        *)
+            warn "Unknown option: $1"
+            shift
+            ;;
     esac
-}
+done
 
-detect_os_early || true
-main "$@"
+main

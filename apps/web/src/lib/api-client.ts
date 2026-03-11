@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL 
+  || (typeof window !== 'undefined' ? '/api/v1' : 'http://localhost:3000/api/v1');
 
 /**
  * Pre-configured Axios instance for the NetMon API.

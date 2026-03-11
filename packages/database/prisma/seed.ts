@@ -1,15 +1,7 @@
 import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
-
-dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const prisma = new PrismaClient();
-
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@netmon.local';
 
 /**
  * Seeds the database with essential data only:
@@ -23,23 +15,21 @@ async function main() {
 
     // ─── Default Admin User ───────────────────────────
     const adminExists = await prisma.user.findUnique({
-        where: { username: ADMIN_USERNAME },
+        where: { username: 'admin' },
     });
 
     if (!adminExists) {
         await prisma.user.create({
             data: {
-                username: ADMIN_USERNAME,
-                email: ADMIN_EMAIL,
-                passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 12),
+                username: 'admin',
+                email: 'admin@netmon.local',
+                passwordHash: await bcrypt.hash('admin', 12),
                 displayName: 'Administrator',
                 role: UserRole.admin,
                 isActive: true,
             },
         });
-        console.log(`  ✓ Created admin user (${ADMIN_USERNAME} / ${ADMIN_PASSWORD})`);
-    } else {
-        console.log(`  ✓ Admin user already exists (${ADMIN_USERNAME})`);
+        console.log('  ✓ Created admin user (admin / admin)');
     }
 
     // ─── Default System Settings ────────────────────
