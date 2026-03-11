@@ -619,6 +619,11 @@ setup_application() {
 
     cd "$INSTALL_DIR"
 
+    # DB connection vars for migration recovery logic
+    local db_name="${POSTGRES_DB:-netmon}"
+    local db_user="${POSTGRES_USER:-netmon}"
+    local db_pass="${GENERATED_DB_PASS:-${POSTGRES_PASSWORD:-}}"
+
     info "Installing npm dependencies..."
     run_with_spinner "Installing npm dependencies..." npm install --production=false
     log "npm dependencies installed"
@@ -631,11 +636,44 @@ setup_application() {
     log "Prisma client generated"
 
     info "Running database migrations..."
-    if ! out=$(npm run db:migrate 2>&1); then
-        echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
-        error "Database migration failed."
+    local migrate_out
+    if ! migrate_out=$(npm run db:migrate 2>&1); then
+        # Handle Prisma P3015 on re-runs: migration history references a folder
+        # that no longer exists in repo (common after branch/schema changes).
+        if echo "$migrate_out" | grep -q "P3015"; then
+            warn "Migration history references missing migration file (P3015)."
+
+            local missing_migration=""
+            missing_migration=$(echo "$migrate_out" | sed -n 's|.*migrations/\([^/]*\)/migration.sql.*|\1|p' | head -1)
+
+            if [[ -n "$missing_migration" ]]; then
+                warn "Removing stale migration entry: ${missing_migration}"
+                case "$OS" in
+                    macos)
+                        psql -d "$db_name" -c "DELETE FROM _prisma_migrations WHERE migration_name='${missing_migration}';" 2>/dev/null || true
+                        ;;
+                    *)
+                        PGPASSWORD="$db_pass" psql -U "$db_user" -h 127.0.0.1 -d "$db_name" -c "DELETE FROM _prisma_migrations WHERE migration_name='${missing_migration}';" 2>/dev/null || true
+                        ;;
+                esac
+
+                info "Retrying database migrations..."
+                if ! migrate_out=$(npm run db:migrate 2>&1); then
+                    echo -e "\n  ${RED}Failed to run database migrations after P3015 cleanup. Output:${NC}\n$migrate_out\n"
+                    error "Database migration failed."
+                fi
+                log "Database migrations applied (after cleanup)"
+            else
+                warn "Could not parse missing migration name from P3015 output."
+                warn "Skipping migration step on re-run to preserve existing data."
+            fi
+        else
+            echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$migrate_out\n"
+            error "Database migration failed."
+        fi
+    else
+        log "Database migrations applied"
     fi
-    log "Database migrations applied"
 
     info "Seeding database with default admin user..."
     if ! out=$(npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1); then
