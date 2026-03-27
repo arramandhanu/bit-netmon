@@ -119,7 +119,7 @@ export function DeviceForm({
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     // Refs for scroll-to-section
-    const sectionRefs: Record<string, React.RefObject<HTMLDivElement | null>> = {
+    const sectionRefs: Record<string, React.RefObject<HTMLDivElement>> = {
         general: useRef<HTMLDivElement>(null),
         snmp: useRef<HTMLDivElement>(null),
         polling: useRef<HTMLDivElement>(null),

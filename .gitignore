@@ -42,5 +42,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
-*.claude
+netmon
+.claude
 CLAUDE.md

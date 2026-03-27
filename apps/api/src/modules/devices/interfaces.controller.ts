@@ -27,6 +27,14 @@ export class InterfacesController {
         return this.interfacesService.findAll(query);
     }
 
+    // Get interfaces for a specific device
+    @Get('device/:deviceId')
+    @RequirePermission('devices:read')
+    @ApiOperation({ summary: 'Get all interfaces for a specific device' })
+    findByDevice(@Param('deviceId', ParseIntPipe) deviceId: number) {
+        return this.interfacesService.findByDeviceId(deviceId);
+    }
+
     // Static routes MUST come before parameterised routes
     @Patch('bulk/update')
     @RequirePermission('devices:write')
