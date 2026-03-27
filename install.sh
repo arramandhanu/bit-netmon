@@ -44,6 +44,8 @@ VERSION_TAG="${VERSION_TAG:-main}"
 UPGRADE_ONLY="${UPGRADE_ONLY:-false}"
 GENERATED_DB_PASS=""
 GENERATED_REDIS_PASS=""
+GENERATED_ADMIN_USER=""
+GENERATED_ADMIN_PASS=""
 
 # ─── Helpers ─────────────────────────────────────────────
 
@@ -267,8 +269,12 @@ clone_or_detect_repo() {
         if [[ -d "${script_dir}/.git" ]]; then
             info "Updating existing repo to ${VERSION_TAG}..."
             git -C "$script_dir" fetch origin "$VERSION_TAG" 2>&1 | tail -1 || true
-            git -C "$script_dir" reset --hard "origin/$VERSION_TAG" 2>&1 | tail -1 || true
-            git -C "$script_dir" clean -fd 2>&1 | tail -1 || true
+            if git -C "$script_dir" diff --quiet && git -C "$script_dir" diff --cached --quiet; then
+                git -C "$script_dir" checkout "$VERSION_TAG" 2>&1 | tail -1 || true
+                git -C "$script_dir" pull --ff-only origin "$VERSION_TAG" 2>&1 | tail -1 || true
+            else
+                warn "Local changes detected in installer repo; skipping auto-update to avoid overwriting work"
+            fi
         fi
         log "Running from existing repo: ${INSTALL_DIR}"
         return
@@ -281,7 +287,12 @@ clone_or_detect_repo() {
         warn "Existing installation found at ${INSTALL_PATH}"
         info "Pulling latest changes..."
         cd "$INSTALL_PATH"
-        git pull origin "$VERSION_TAG" 2>&1 | tail -1
+        if git diff --quiet && git diff --cached --quiet; then
+            git checkout "$VERSION_TAG" 2>&1 | tail -1 || true
+            git pull --ff-only origin "$VERSION_TAG" 2>&1 | tail -1
+        else
+            warn "Local changes detected in ${INSTALL_PATH}; skipping git pull"
+        fi
     else
         info "Cloning to ${INSTALL_PATH}..."
         git clone --branch "$VERSION_TAG" "$REPO_URL" "$INSTALL_PATH"
@@ -554,6 +565,24 @@ generate_env() {
     local jwt_secret
     local encryption_key
     local api_domain="${API_DOMAIN:-$(detect_local_ip)}"
+    local frontend_api_url
+    local frontend_ws_url
+    local admin_user="${ADMIN_USERNAME:-admin}"
+    local admin_pass="${ADMIN_PASSWORD:-$(generate_secret 24)}"
+    local admin_email="${ADMIN_EMAIL:-${admin_user}@netmon.local}"
+    local admin_display_name="${ADMIN_DISPLAY_NAME:-Administrator}"
+
+    GENERATED_ADMIN_USER="$admin_user"
+    GENERATED_ADMIN_PASS="$admin_pass"
+
+    if [[ -n "${API_DOMAIN:-}" ]]; then
+        # With reverse proxy/domain, use same-origin URLs to avoid mixed-content/CORS issues.
+        frontend_api_url="/api/v1"
+        frontend_ws_url=""
+    else
+        frontend_api_url="http://${api_domain}:${API_PORT}/api/v1"
+        frontend_ws_url="http://${api_domain}:${API_PORT}"
+    fi
 
     jwt_secret="$(generate_secret 64)"
     encryption_key="$(generate_secret 32)"
@@ -592,6 +621,12 @@ JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 ENCRYPTION_KEY=${encryption_key}
 
+# Initial admin (used by seed on first install)
+ADMIN_USERNAME=${admin_user}
+ADMIN_PASSWORD=${admin_pass}
+ADMIN_EMAIL=${admin_email}
+ADMIN_DISPLAY_NAME=${admin_display_name}
+
 # SNMP
 SNMP_DEFAULT_TIMEOUT=5000
 SNMP_DEFAULT_RETRIES=1
@@ -601,8 +636,8 @@ SNMP_POLLING_INTERVAL=300
 LOG_LEVEL=info
 
 # Frontend URLs
-NEXT_PUBLIC_API_URL=http://${api_domain}:${API_PORT}/api/v1
-NEXT_PUBLIC_WS_URL=http://${api_domain}:${API_PORT}
+NEXT_PUBLIC_API_URL=${frontend_api_url}
+NEXT_PUBLIC_WS_URL=${frontend_ws_url}
 
 # Notifications (optional)
 # TELEGRAM_BOT_TOKEN=
@@ -617,6 +652,8 @@ EOF
     log ".env file generated at ${env_file}"
     info "Database password: ${db_pass}"
     info "Redis password:    ${redis_pass}"
+    info "Admin username:    ${admin_user}"
+    info "Admin password:    ${admin_pass}"
     warn "Save these credentials — they won't be shown again!"
 }
 
@@ -688,7 +725,7 @@ setup_application() {
         warn "Seeding skipped or failed — you may need to create an admin user manually."
         echo -e "  ${DIM}Seed output:\n$out${NC}"
     else
-        log "Database seeded (default: admin / admin)"
+        log "Database seeded (admin user configured from .env)"
     fi
 
     info "Building production assets (this may take a few minutes)..."
@@ -821,7 +858,7 @@ Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}/apps/web
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p \${WEB_PORT:-3001}
+ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p ${WEB_PORT}
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -1247,8 +1284,12 @@ print_summary() {
     echo -e "  ${CYAN}Web UI:${NC}      http://localhost:${WEB_PORT}"
     echo -e "  ${CYAN}API:${NC}         http://localhost:${API_PORT}/api/v1"
     echo ""
-    echo -e "  ${BOLD}Default Login:${NC}"
-    echo -e "  ${CYAN}Admin:${NC}       admin / admin"
+    echo -e "  ${BOLD}Initial Login:${NC}"
+    if [[ -n "${GENERATED_ADMIN_USER}" ]] && [[ -n "${GENERATED_ADMIN_PASS}" ]]; then
+        echo -e "  ${CYAN}Admin:${NC}       ${GENERATED_ADMIN_USER} / ${GENERATED_ADMIN_PASS}"
+    else
+        echo -e "  ${CYAN}Admin:${NC}       See ADMIN_USERNAME / ADMIN_PASSWORD in ${INSTALL_DIR}/.env"
+    fi
     echo ""
     echo -e "  ${BOLD}Generated Credentials:${NC}"
     echo -e "  ${CYAN}DB Password:${NC}    ${GENERATED_DB_PASS}"
@@ -1272,7 +1313,7 @@ print_summary() {
     echo ""
     echo -e "  ${BOLD}Config:${NC}      ${INSTALL_DIR}/.env"
     echo ""
-    echo -e "  ${YELLOW}⚠ Change the default admin password immediately after login!${NC}"
+    echo -e "  ${YELLOW}⚠ Rotate ADMIN_PASSWORD after first login (and update .env).${NC}"
     echo ""
 }
 
