@@ -10,6 +10,7 @@
 #  Options:
 #    --unattended     Non-interactive mode (use all defaults)
 #    --version TAG    Install a specific git tag/branch
+#    --upgrade        Upgrade app code only (no DB/env changes)
 #    --nginx          Set up Nginx reverse proxy only
 #    --help           Show help
 # ───────────────────────────────────────────────────────────
@@ -40,8 +41,11 @@ WEB_PORT="${WEB_PORT:-3001}"
 INSTALL_PATH="${INSTALL_PATH:-/opt/netmon}"
 UNATTENDED="${UNATTENDED:-false}"
 VERSION_TAG="${VERSION_TAG:-main}"
+UPGRADE_ONLY="${UPGRADE_ONLY:-false}"
 GENERATED_DB_PASS=""
 GENERATED_REDIS_PASS=""
+GENERATED_ADMIN_USER=""
+GENERATED_ADMIN_PASS=""
 
 # ─── Helpers ─────────────────────────────────────────────
 
@@ -262,6 +266,16 @@ clone_or_detect_repo() {
     # Check if we're already inside the repo
     if [[ -f "${script_dir}/package.json" ]] && grep -q '"netmon"' "${script_dir}/package.json" 2>/dev/null; then
         INSTALL_DIR="$script_dir"
+        if [[ -d "${script_dir}/.git" ]]; then
+            info "Updating existing repo to ${VERSION_TAG}..."
+            git -C "$script_dir" fetch origin "$VERSION_TAG" 2>&1 | tail -1 || true
+            if git -C "$script_dir" diff --quiet && git -C "$script_dir" diff --cached --quiet; then
+                git -C "$script_dir" checkout "$VERSION_TAG" 2>&1 | tail -1 || true
+                git -C "$script_dir" pull --ff-only origin "$VERSION_TAG" 2>&1 | tail -1 || true
+            else
+                warn "Local changes detected in installer repo; skipping auto-update to avoid overwriting work"
+            fi
+        fi
         log "Running from existing repo: ${INSTALL_DIR}"
         return
     fi
@@ -273,7 +287,12 @@ clone_or_detect_repo() {
         warn "Existing installation found at ${INSTALL_PATH}"
         info "Pulling latest changes..."
         cd "$INSTALL_PATH"
-        git pull origin "$VERSION_TAG" 2>&1 | tail -1
+        if git diff --quiet && git diff --cached --quiet; then
+            git checkout "$VERSION_TAG" 2>&1 | tail -1 || true
+            git pull --ff-only origin "$VERSION_TAG" 2>&1 | tail -1
+        else
+            warn "Local changes detected in ${INSTALL_PATH}; skipping git pull"
+        fi
     else
         info "Cloning to ${INSTALL_PATH}..."
         git clone --branch "$VERSION_TAG" "$REPO_URL" "$INSTALL_PATH"
@@ -546,6 +565,24 @@ generate_env() {
     local jwt_secret
     local encryption_key
     local api_domain="${API_DOMAIN:-$(detect_local_ip)}"
+    local frontend_api_url
+    local frontend_ws_url
+    local admin_user="${ADMIN_USERNAME:-admin}"
+    local admin_pass="${ADMIN_PASSWORD:-$(generate_secret 24)}"
+    local admin_email="${ADMIN_EMAIL:-${admin_user}@netmon.local}"
+    local admin_display_name="${ADMIN_DISPLAY_NAME:-Administrator}"
+
+    GENERATED_ADMIN_USER="$admin_user"
+    GENERATED_ADMIN_PASS="$admin_pass"
+
+    if [[ -n "${API_DOMAIN:-}" ]]; then
+        # With reverse proxy/domain, use same-origin URLs to avoid mixed-content/CORS issues.
+        frontend_api_url="/api/v1"
+        frontend_ws_url=""
+    else
+        frontend_api_url="http://${api_domain}:${API_PORT}/api/v1"
+        frontend_ws_url="http://${api_domain}:${API_PORT}"
+    fi
 
     jwt_secret="$(generate_secret 64)"
     encryption_key="$(generate_secret 32)"
@@ -584,6 +621,12 @@ JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 ENCRYPTION_KEY=${encryption_key}
 
+# Initial admin (used by seed on first install)
+ADMIN_USERNAME=${admin_user}
+ADMIN_PASSWORD=${admin_pass}
+ADMIN_EMAIL=${admin_email}
+ADMIN_DISPLAY_NAME=${admin_display_name}
+
 # SNMP
 SNMP_DEFAULT_TIMEOUT=5000
 SNMP_DEFAULT_RETRIES=1
@@ -593,8 +636,8 @@ SNMP_POLLING_INTERVAL=300
 LOG_LEVEL=info
 
 # Frontend URLs
-NEXT_PUBLIC_API_URL=http://${api_domain}:${API_PORT}/api/v1
-NEXT_PUBLIC_WS_URL=http://${api_domain}:${API_PORT}
+NEXT_PUBLIC_API_URL=${frontend_api_url}
+NEXT_PUBLIC_WS_URL=${frontend_ws_url}
 
 # Notifications (optional)
 # TELEGRAM_BOT_TOKEN=
@@ -609,6 +652,8 @@ EOF
     log ".env file generated at ${env_file}"
     info "Database password: ${db_pass}"
     info "Redis password:    ${redis_pass}"
+    info "Admin username:    ${admin_user}"
+    info "Admin password:    ${admin_pass}"
     warn "Save these credentials — they won't be shown again!"
 }
 
@@ -618,6 +663,11 @@ setup_application() {
     section "Application Setup"
 
     cd "$INSTALL_DIR"
+
+    # DB connection vars for migration recovery logic
+    local db_name="${POSTGRES_DB:-netmon}"
+    local db_user="${POSTGRES_USER:-netmon}"
+    local db_pass="${GENERATED_DB_PASS:-${POSTGRES_PASSWORD:-}}"
 
     info "Installing npm dependencies..."
     run_with_spinner "Installing npm dependencies..." npm install --production=false
@@ -631,21 +681,79 @@ setup_application() {
     log "Prisma client generated"
 
     info "Running database migrations..."
-    if ! out=$(npm run db:migrate 2>&1); then
-        echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$out\n"
-        error "Database migration failed."
+    local migrate_out
+    if ! migrate_out=$(npm run db:migrate 2>&1); then
+        # Handle Prisma P3015 on re-runs: migration history references a folder
+        # that no longer exists in repo (common after branch/schema changes).
+        if echo "$migrate_out" | grep -q "P3015"; then
+            warn "Migration history references missing migration file (P3015)."
+
+            local missing_migration=""
+            missing_migration=$(echo "$migrate_out" | sed -n 's|.*migrations/\([^/]*\)/migration.sql.*|\1|p' | head -1)
+
+            if [[ -n "$missing_migration" ]]; then
+                warn "Removing stale migration entry: ${missing_migration}"
+                case "$OS" in
+                    macos)
+                        psql -d "$db_name" -c "DELETE FROM _prisma_migrations WHERE migration_name='${missing_migration}';" 2>/dev/null || true
+                        ;;
+                    *)
+                        PGPASSWORD="$db_pass" psql -U "$db_user" -h 127.0.0.1 -d "$db_name" -c "DELETE FROM _prisma_migrations WHERE migration_name='${missing_migration}';" 2>/dev/null || true
+                        ;;
+                esac
+
+                info "Retrying database migrations..."
+                if ! migrate_out=$(npm run db:migrate 2>&1); then
+                    echo -e "\n  ${RED}Failed to run database migrations after P3015 cleanup. Output:${NC}\n$migrate_out\n"
+                    error "Database migration failed."
+                fi
+                log "Database migrations applied (after cleanup)"
+            else
+                warn "Could not parse missing migration name from P3015 output."
+                warn "Skipping migration step on re-run to preserve existing data."
+            fi
+        else
+            echo -e "\n  ${RED}Failed to run database migrations. Output:${NC}\n$migrate_out\n"
+            error "Database migration failed."
+        fi
+    else
+        log "Database migrations applied"
     fi
-    log "Database migrations applied"
 
     info "Seeding database with default admin user..."
     if ! out=$(npx prisma db seed --schema=packages/database/prisma/schema.prisma 2>&1); then
         warn "Seeding skipped or failed — you may need to create an admin user manually."
         echo -e "  ${DIM}Seed output:\n$out${NC}"
     else
-        log "Database seeded (default: admin / admin)"
+        log "Database seeded (admin user configured from .env)"
     fi
 
     info "Building production assets (this may take a few minutes)..."
+    run_with_spinner "Building production assets..." npm run build
+    log "Production build complete"
+}
+
+setup_application_upgrade() {
+    section "Application Upgrade"
+
+    cd "$INSTALL_DIR"
+
+    if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+        error "No .env found at ${INSTALL_DIR}. Use full install first (without --upgrade)."
+    fi
+
+    info "Installing npm dependencies..."
+    run_with_spinner "Installing npm dependencies..." npm install --production=false
+    log "npm dependencies installed"
+
+    info "Generating Prisma client..."
+    if ! out=$(npm run db:generate 2>&1); then
+        echo -e "\n  ${RED}Failed to generate Prisma client. Output:${NC}\n$out\n"
+        error "Prisma client generation failed."
+    fi
+    log "Prisma client generated"
+
+    info "Building production assets..."
     run_with_spinner "Building production assets..." npm run build
     log "Production build complete"
 }
@@ -750,7 +858,7 @@ Type=simple
 User=${run_user}
 WorkingDirectory=${INSTALL_DIR}/apps/web
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p \${WEB_PORT:-3001}
+ExecStart=${node_path} ${INSTALL_DIR}/node_modules/.bin/next start -H 0.0.0.0 -p ${WEB_PORT}
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -1176,8 +1284,12 @@ print_summary() {
     echo -e "  ${CYAN}Web UI:${NC}      http://localhost:${WEB_PORT}"
     echo -e "  ${CYAN}API:${NC}         http://localhost:${API_PORT}/api/v1"
     echo ""
-    echo -e "  ${BOLD}Default Login:${NC}"
-    echo -e "  ${CYAN}Admin:${NC}       admin / admin"
+    echo -e "  ${BOLD}Initial Login:${NC}"
+    if [[ -n "${GENERATED_ADMIN_USER}" ]] && [[ -n "${GENERATED_ADMIN_PASS}" ]]; then
+        echo -e "  ${CYAN}Admin:${NC}       ${GENERATED_ADMIN_USER} / ${GENERATED_ADMIN_PASS}"
+    else
+        echo -e "  ${CYAN}Admin:${NC}       See ADMIN_USERNAME / ADMIN_PASSWORD in ${INSTALL_DIR}/.env"
+    fi
     echo ""
     echo -e "  ${BOLD}Generated Credentials:${NC}"
     echo -e "  ${CYAN}DB Password:${NC}    ${GENERATED_DB_PASS}"
@@ -1201,7 +1313,7 @@ print_summary() {
     echo ""
     echo -e "  ${BOLD}Config:${NC}      ${INSTALL_DIR}/.env"
     echo ""
-    echo -e "  ${YELLOW}⚠ Change the default admin password immediately after login!${NC}"
+    echo -e "  ${YELLOW}⚠ Rotate ADMIN_PASSWORD after first login (and update .env).${NC}"
     echo ""
 }
 
@@ -1212,6 +1324,19 @@ main() {
     detect_os
     check_root
     clone_or_detect_repo "$@"
+
+    if [[ "$UPGRADE_ONLY" == "true" ]]; then
+        section "Upgrade Mode"
+        info "Upgrade-only mode enabled: skipping DB, seed, env, and firewall steps"
+        install_prerequisites
+        install_nodejs
+        setup_application_upgrade
+        setup_systemd
+        verify_health
+        print_summary
+        return
+    fi
+
     check_resources
     install_prerequisites
     install_nodejs
@@ -1241,6 +1366,10 @@ while [[ $# -gt 0 ]]; do
             VERSION_TAG="${2:-main}"
             shift 2
             ;;
+        --upgrade)
+            UPGRADE_ONLY="true"
+            shift
+            ;;
         --nginx)
             detect_os
             # Set INSTALL_DIR for nginx-only mode
@@ -1255,6 +1384,7 @@ while [[ $# -gt 0 ]]; do
             echo "  Options:"
             echo "    --unattended      Non-interactive mode, accept all defaults"
             echo "    --version TAG     Install a specific git tag/branch (default: main)"
+            echo "    --upgrade         Upgrade code/services only (skip DB/env/firewall)"
             echo "    --nginx           Set up Nginx reverse proxy only"
             echo "    --help            Show this help"
             echo ""

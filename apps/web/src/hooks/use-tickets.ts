@@ -88,7 +88,10 @@ export interface TicketStats {
     open: number;
     inProgress: number;
     waiting: number;
+    escalated: number;
+    onHold: number;
     resolved: number;
+    closed: number;
     overdue: number;
     total: number;
     byPriority: Record<string, number>;

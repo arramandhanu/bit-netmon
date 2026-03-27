@@ -28,6 +28,13 @@ export class InterfacesService {
 
     constructor(private readonly prisma: PrismaService) { }
 
+    async findByDeviceId(deviceId: number) {
+        return this.prisma.interface.findMany({
+            where: { deviceId },
+            orderBy: { ifIndex: 'asc' },
+        });
+    }
+
     async findAll(query: InterfaceQueryDto) {
         const { page = 1, limit = 25, search, status, adminStatus, type, deviceId, pollingEnabled } = query;
         const skip = (page - 1) * limit;
