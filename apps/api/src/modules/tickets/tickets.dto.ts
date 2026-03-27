@@ -29,6 +29,7 @@ export enum TicketCategoryEnum {
     problem = 'problem',
     change_request = 'change_request',
     maintenance = 'maintenance',
+    support_request = 'support_request',
 }
 
 // ─── Create ─────────────────────────────────────────────

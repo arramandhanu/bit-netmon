@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateAlertRuleDto, UpdateAlertRuleDto, AlertHistoryQueryDto } from './alerting.dto';
+import { TenantUser, tenantWhere, isSuperAdmin } from '../../common/guards/tenant.guard';
 
 @Injectable()
 export class AlertingService {
@@ -8,7 +9,7 @@ export class AlertingService {
 
     // ─── Alert Rules CRUD ───────────────────────────────
 
-    async createRule(dto: CreateAlertRuleDto) {
+    async createRule(dto: CreateAlertRuleDto, user?: TenantUser) {
         return this.prisma.alertRule.create({
             data: {
                 name: dto.name,
@@ -20,13 +21,15 @@ export class AlertingService {
                 severity: (dto.severity as any) || 'warning',
                 notifyChannels: dto.notifyChannels || [],
                 deviceGroupId: dto.deviceGroupId,
+                ...(user ? { tenantId: user.tenantId } : {}),
             },
             include: { deviceGroup: true },
         });
     }
 
-    async listRules() {
+    async listRules(user?: TenantUser) {
         return this.prisma.alertRule.findMany({
+            where: user ? tenantWhere(user) : {},
             include: {
                 deviceGroup: true,
                 _count: { select: { alerts: true } },
@@ -35,7 +38,7 @@ export class AlertingService {
         });
     }
 
-    async getRule(id: number) {
+    async getRule(id: number, user?: TenantUser) {
         const rule = await this.prisma.alertRule.findUnique({
             where: { id },
             include: {
@@ -48,12 +51,14 @@ export class AlertingService {
             },
         });
 
-        if (!rule) throw new NotFoundException(`Alert rule #${id} not found`);
+        if (!rule || (user && !isSuperAdmin(user) && rule.tenantId !== user.tenantId)) {
+            throw new NotFoundException(`Alert rule #${id} not found`);
+        }
         return rule;
     }
 
-    async updateRule(id: number, dto: UpdateAlertRuleDto) {
-        await this.getRule(id); // Ensure exists
+    async updateRule(id: number, dto: UpdateAlertRuleDto, user?: TenantUser) {
+        await this.getRule(id, user); // Ensure exists + tenant check
 
         return this.prisma.alertRule.update({
             where: { id },
@@ -73,8 +78,8 @@ export class AlertingService {
         });
     }
 
-    async deleteRule(id: number) {
-        await this.getRule(id);
+    async deleteRule(id: number, user?: TenantUser) {
+        await this.getRule(id, user);
         await this.prisma.alertRule.delete({ where: { id } });
         return { deleted: true };
     }

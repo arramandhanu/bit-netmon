@@ -54,23 +54,23 @@ export function useDashboard(refreshInterval = 30000) {
 
             // The API now returns { metrics: [...], totalLocations: ..., ... }
             const dashboardPayload = dashboardRes.data;
-            const metrics = dashboardPayload.metrics || [];
+            const metrics: any[] = dashboardPayload.metrics || [];
             const totalDevices = devicesRes.data?.total || devicesRes.data?.data?.length || metrics.length;
 
-            const devicesUp = metrics.filter((m: any) => m.device_status === 'up').length;
-            const devicesDown = metrics.filter((m: any) => m.device_status === 'down').length;
-            const devicesWarning = metrics.filter((m: any) => {
+            const devicesUp = metrics.filter(m => m.device_status === 'up').length;
+            const devicesDown = metrics.filter(m => m.device_status === 'down').length;
+            const devicesWarning = metrics.filter(m => {
                 if (m.device_status === 'warning') return true;
                 if (m.cpu_utilization && m.cpu_utilization > 80) return true;
                 if (m.memory_percent && m.memory_percent > 85) return true;
                 return false;
             }).length;
 
-            const cpuValues = metrics.filter((m: any) => m.cpu_utilization != null).map((m: any) => m.cpu_utilization!);
-            const memValues = metrics.filter((m: any) => m.memory_percent != null).map((m: any) => m.memory_percent!);
+            const cpuValues = metrics.filter(m => m.cpu_utilization != null).map(m => m.cpu_utilization!);
+            const memValues = metrics.filter(m => m.memory_percent != null).map(m => m.memory_percent!);
 
-            const avgCpu = cpuValues.length > 0 ? Math.round(cpuValues.reduce((a: number, b: number) => a + b, 0) / cpuValues.length) : 0;
-            const avgMemory = memValues.length > 0 ? Math.round(memValues.reduce((a: number, b: number) => a + b, 0) / memValues.length) : 0;
+            const avgCpu = cpuValues.length > 0 ? Math.round(cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length) : 0;
+            const avgMemory = memValues.length > 0 ? Math.round(memValues.reduce((a, b) => a + b, 0) / memValues.length) : 0;
 
             const topCpuDevices = [...metrics]
                 .filter(m => m.cpu_utilization != null)

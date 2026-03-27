@@ -19,6 +19,16 @@ import {
     Shield,
     Wifi,
     Ticket,
+    Clock,
+    Globe,
+    Monitor,
+    Brain,
+    FileText,
+    Wrench,
+    CreditCard,
+    Users2,
+    UserCircle,
+    BarChart3,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { getStoredUser } from '@/hooks/use-auth';
@@ -35,12 +45,22 @@ interface NavItem {
 const navigation: NavItem[] = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Devices', href: '/devices', icon: Server },
+    { label: 'Uptime / SLA', href: '/uptime', icon: Clock },
+    { label: 'Web Monitor', href: '/web-monitor', icon: Globe },
+    { label: 'Server Monitor', href: '/server-monitor', icon: Monitor, roles: ['admin', 'operator', 'viewer'] },
     { label: 'Locations', href: '/locations', icon: MapPin },
-    { label: 'Network Map', href: '/map', icon: Map },
-    { label: 'Interfaces', href: '/interfaces', icon: Activity },
-    { label: 'Wireless', href: '/wireless', icon: Wifi },
+    { label: 'Network Map', href: '/map', icon: Map, roles: ['admin', 'operator', 'viewer'] },
+    { label: 'Interfaces', href: '/interfaces', icon: Activity, roles: ['admin', 'operator', 'viewer'] },
+    { label: 'Bandwidth', href: '/bandwidth', icon: BarChart3 },
+    { label: 'Wireless', href: '/wireless', icon: Wifi, roles: ['admin', 'operator', 'viewer'] },
     { label: 'Alerts', href: '/alerts', icon: Bell },
     { label: 'Tickets', href: '/tickets', icon: Ticket },
+    { label: 'AI Analytics', href: '/ai-analytics', icon: Brain, roles: ['admin', 'operator'] },
+    { label: 'Reports', href: '/reports', icon: FileText, roles: ['admin', 'operator', 'viewer'] },
+    { label: 'DevOps', href: '/devops', icon: Wrench, roles: ['admin', 'operator'] },
+    { label: 'Team', href: '/team', icon: Users2 },
+    { label: 'Profile', href: '/profile', icon: UserCircle },
+    { label: 'Billing', href: '/billing', icon: CreditCard },
 ];
 
 const adminNavigation: NavItem[] = [
@@ -48,6 +68,7 @@ const adminNavigation: NavItem[] = [
     { label: 'Discovery', href: '/admin/discovery', icon: Search, roles: ['admin', 'operator'] },
     { label: 'Security', href: '/admin/security', icon: Shield, roles: ['admin'] },
     { label: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
+    { label: 'Billing Admin', href: '/admin/billing', icon: CreditCard, roles: ['admin'] },
 ];
 
 interface SidebarProps {
@@ -59,6 +80,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const pathname = usePathname();
     const currentUser = getStoredUser();
     const userRole = currentUser?.role || 'viewer';
+
+    // Filter nav items by role
+    const visibleMainNav = useMemo(() => {
+        return navigation.filter(item => {
+            if (!item.roles) return true;
+            return item.roles.includes(userRole);
+        });
+    }, [userRole]);
 
     // Filter admin items by role
     const visibleAdminNav = useMemo(() => {
@@ -118,7 +147,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     {collapsed ? '•' : 'Monitor'}
                 </p>
 
-                {navigation.map((item) => {
+                {visibleMainNav.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
                     return (
                         <Link key={item.href} href={item.href}>

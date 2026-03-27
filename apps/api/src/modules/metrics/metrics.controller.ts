@@ -79,4 +79,27 @@ export class MetricsController {
     syncPolling() {
         return this.pollingService.syncPollingJobs();
     }
+
+    // ─── Bandwidth Monitoring ───────────────────────────
+
+    @Get('metrics/bandwidth/top')
+    @ApiOperation({ summary: 'Get top interfaces by bandwidth across all devices' })
+    getTopInterfaces(@Query() query: MetricsQueryDto) {
+        return this.metricsService.getTopInterfaces(query);
+    }
+
+    @Get('metrics/bandwidth/report')
+    @ApiOperation({ summary: 'Get bandwidth report data (for CSV export)' })
+    getBandwidthReport(@Query() query: MetricsQueryDto) {
+        return this.metricsService.getBandwidthReport(query);
+    }
+
+    @Get('metrics/bandwidth/:deviceId')
+    @ApiOperation({ summary: 'Get aggregate bandwidth overview for a device' })
+    getBandwidthOverview(
+        @Param('deviceId', ParseIntPipe) deviceId: number,
+        @Query() query: MetricsQueryDto,
+    ) {
+        return this.metricsService.getBandwidthOverview(deviceId, query);
+    }
 }

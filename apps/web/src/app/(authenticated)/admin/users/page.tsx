@@ -19,6 +19,8 @@ const roleConfig: Record<string, { bg: string; text: string }> = {
     OPERATOR: { bg: 'bg-blue-500/10', text: 'text-blue-400' },
     viewer: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
     VIEWER: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
+    user: { bg: 'bg-purple-500/10', text: 'text-purple-400' },
+    USER: { bg: 'bg-purple-500/10', text: 'text-purple-400' },
 };
 
 /* ─── Modal ──────────────────────────────────────────── */
@@ -98,6 +100,7 @@ function UserModal({ user, onClose, onSaved }: { user?: User | null; onClose: ()
                             <option value="admin">Admin</option>
                             <option value="operator">Operator</option>
                             <option value="viewer">Viewer</option>
+                            <option value="user">User (SaaS)</option>
                         </select>
                     </label>
                     {isEdit && (

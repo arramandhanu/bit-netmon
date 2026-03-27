@@ -14,7 +14,7 @@ export interface Location {
     province: string | null;
     latitude: number | null;
     longitude: number | null;
-    _count?: { devices: number };
+    _count?: { devices: number; serverMonitors: number; urlMonitors: number };
     createdAt: string;
 }
 

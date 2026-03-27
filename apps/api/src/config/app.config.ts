@@ -43,6 +43,11 @@ const envSchema = z.object({
     SMTP_PORT: z.coerce.number().int().optional(),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+
+    // Midtrans (optional)
+    MIDTRANS_SERVER_KEY: z.string().optional(),
+    MIDTRANS_CLIENT_KEY: z.string().optional(),
+    MIDTRANS_IS_PRODUCTION: z.coerce.boolean().default(false),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -117,6 +122,12 @@ export default () => {
             port: env.SMTP_PORT,
             user: env.SMTP_USER,
             pass: env.SMTP_PASS,
+        },
+
+        midtrans: {
+            serverKey: env.MIDTRANS_SERVER_KEY,
+            clientKey: env.MIDTRANS_CLIENT_KEY,
+            isProduction: env.MIDTRANS_IS_PRODUCTION,
         },
     };
 };

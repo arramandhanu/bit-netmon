@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { SnmpService, SnmpTarget } from '../snmp/snmp.service';
 import { CreateDeviceDto, UpdateDeviceDto, DeviceQueryDto, TestSnmpDto } from './devices.dto';
+import { TenantUser, tenantWhere, isSuperAdmin } from '../../common/guards/tenant.guard';
 
 @Injectable()
 export class DevicesService {
@@ -19,11 +20,11 @@ export class DevicesService {
         private readonly snmp: SnmpService,
     ) { }
 
-    async findAll(query: DeviceQueryDto) {
+    async findAll(query: DeviceQueryDto, user?: TenantUser) {
         const { page = 1, limit = 25, status, type, locationId, search } = query;
         const skip = (page - 1) * limit;
 
-        const where: any = {};
+        const where: any = { ...(user ? tenantWhere(user) : {}) };
 
         if (status) where.status = status;
         if (type) where.deviceType = type;
@@ -67,7 +68,7 @@ export class DevicesService {
         };
     }
 
-    async findOne(id: number) {
+    async findOne(id: number, user?: TenantUser) {
         const device = await this.prisma.device.findUnique({
             where: { id },
             include: {
@@ -78,7 +79,7 @@ export class DevicesService {
             },
         });
 
-        if (!device) {
+        if (!device || (user && !isSuperAdmin(user) && device.tenantId !== user.tenantId)) {
             throw new NotFoundException(`Device #${id} not found`);
         }
 
@@ -91,7 +92,7 @@ export class DevicesService {
         };
     }
 
-    async create(dto: CreateDeviceDto) {
+    async create(dto: CreateDeviceDto, user?: TenantUser) {
         // Check hostname uniqueness
         const existing = await this.prisma.device.findUnique({
             where: { hostname: dto.hostname },
@@ -112,6 +113,7 @@ export class DevicesService {
             snmpPort: dto.snmpPort || 161,
             pollingEnabled: dto.pollingEnabled ?? true,
             pollingInterval: dto.pollingInterval || 300,
+            ...(user ? { tenantId: user.tenantId } : {}),
         };
 
         if (dto.snmpCommunity) {
@@ -144,9 +146,9 @@ export class DevicesService {
         };
     }
 
-    async update(id: number, dto: UpdateDeviceDto) {
+    async update(id: number, dto: UpdateDeviceDto, user?: TenantUser) {
         const existing = await this.prisma.device.findUnique({ where: { id } });
-        if (!existing) {
+        if (!existing || (user && !isSuperAdmin(user) && existing.tenantId !== user.tenantId)) {
             throw new NotFoundException(`Device #${id} not found`);
         }
 
@@ -191,9 +193,9 @@ export class DevicesService {
         };
     }
 
-    async remove(id: number) {
+    async remove(id: number, user?: TenantUser) {
         const existing = await this.prisma.device.findUnique({ where: { id } });
-        if (!existing) {
+        if (!existing || (user && !isSuperAdmin(user) && existing.tenantId !== user.tenantId)) {
             throw new NotFoundException(`Device #${id} not found`);
         }
 
@@ -203,12 +205,13 @@ export class DevicesService {
         return { message: `Device "${existing.hostname}" deleted` };
     }
 
-    async bulkRemove(ids: number[]) {
+    async bulkRemove(ids: number[], user?: TenantUser) {
+        const tenantFilter = user ? tenantWhere(user) : {};
         const result = await this.prisma.$transaction(async (tx) => {
             // Delete related interfaces first
             await tx.interface.deleteMany({ where: { deviceId: { in: ids } } });
             // Delete devices
-            const deleted = await tx.device.deleteMany({ where: { id: { in: ids } } });
+            const deleted = await tx.device.deleteMany({ where: { id: { in: ids }, ...tenantFilter } });
             return deleted;
         });
 
@@ -216,11 +219,12 @@ export class DevicesService {
         return { deleted: result.count, message: `${result.count} device(s) deleted` };
     }
 
-    async bulkUpdate(ids: number[], dto: UpdateDeviceDto) {
+    async bulkUpdate(ids: number[], dto: UpdateDeviceDto, user?: TenantUser) {
         if (!ids.length || Object.keys(dto).length === 0) {
             return { updated: 0, message: 'No updates provided' };
         }
 
+        const tenantFilter = user ? tenantWhere(user) : {};
         const data: any = { ...dto };
 
         // Ensure we encrypt credentials if they are part of the mass update
@@ -239,7 +243,7 @@ export class DevicesService {
         delete data.ipAddress; // Also probably bad to mass-update IP
 
         const result = await this.prisma.device.updateMany({
-            where: { id: { in: ids } },
+            where: { id: { in: ids }, ...tenantFilter },
             data,
         });
 

@@ -10,7 +10,7 @@ import { Reflector } from '@nestjs/core';
 /**
  * Supported roles (matches Prisma UserRole enum).
  */
-export type AppRole = 'admin' | 'operator' | 'viewer';
+export type AppRole = 'admin' | 'operator' | 'viewer' | 'user';
 
 /**
  * Permission matrix — what each role can do.
@@ -42,6 +42,13 @@ const PERMISSIONS: Record<AppRole, Set<string>> = {
         'reports:generate',
         'settings:read',
         'audit:read',
+    ]),
+    user: new Set([
+        'devices:read',
+        'alerts:read',
+        'tickets:read',
+        'tickets:write',
+        'reports:generate',
     ]),
 };
 

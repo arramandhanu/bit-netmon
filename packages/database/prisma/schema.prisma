@@ -62,6 +62,7 @@ enum UserRole {
   admin
   operator
   viewer
+  user
 
   @@map("user_role")
 }
@@ -92,6 +93,7 @@ enum TicketCategory {
   problem
   change_request
   maintenance
+  support_request
 
   @@map("ticket_category")
 }
@@ -110,8 +112,15 @@ model Location {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  devices Device[]
+  // Multi-tenant
+  tenantId       Int?     @map("tenant_id")
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  devices        Device[]
+  serverMonitors ServerMonitor[]
+  urlMonitors    UrlMonitor[]
+
+  @@index([tenantId], map: "idx_locations_tenant")
   @@map("locations")
 }
 
@@ -157,6 +166,10 @@ model Device {
   pollingJobs      PollingJob[]
   tickets          Ticket[]
 
+  // Multi-tenant
+  tenantId         Int?         @map("tenant_id")
+  tenant           Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
@@ -164,6 +177,7 @@ model Device {
   @@index([status], map: "idx_devices_status")
   @@index([deviceType], map: "idx_devices_type")
   @@index([ipAddress], map: "idx_devices_ip")
+  @@index([tenantId], map: "idx_devices_tenant")
   @@map("devices")
 }
 
@@ -214,9 +228,14 @@ model AlertRule {
 
   alerts         AlertHistory[]
 
+  // Multi-tenant
+  tenantId       Int?          @map("tenant_id")
+  tenant         Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
+  @@index([tenantId], map: "idx_alert_rules_tenant")
   @@map("alert_rules")
 }
 
@@ -254,9 +273,14 @@ model DeviceGroup {
   members     DeviceGroupMember[]
   alertRules  AlertRule[]
 
+  // Multi-tenant
+  tenantId    Int?                @map("tenant_id")
+  tenant      Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
 
+  @@index([tenantId], map: "idx_device_groups_tenant")
   @@map("device_groups")
 }
 
@@ -298,11 +322,22 @@ model User {
   email        String   @unique @db.VarChar(255)
   passwordHash String   @map("password_hash") @db.VarChar(255)
   displayName  String?  @map("display_name") @db.VarChar(255)
+  fullName     String?  @map("full_name") @db.VarChar(255)
+  phone        String?  @db.VarChar(50)
   role         UserRole @default(viewer)
   isActive     Boolean  @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at")
   totpSecret   String?  @map("totp_secret") @db.VarChar(255)
   totpEnabled  Boolean  @default(false) @map("totp_enabled")
+
+  // Email verification
+  emailVerified       Boolean   @default(false) @map("email_verified")
+  verificationToken   String?   @map("verification_token") @db.VarChar(255)
+  verificationExpires DateTime? @map("verification_expires")
+
+  // Multi-tenant
+  tenantId     Int?     @map("tenant_id")
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -312,7 +347,9 @@ model User {
   createdTickets     Ticket[]          @relation("TicketCreator")
   assignedTickets    Ticket[]          @relation("TicketAssignee")
   ticketComments     TicketComment[]
+  sentInvitations    TenantInvitation[] @relation("InvitedBy")
 
+  @@index([tenantId], map: "idx_users_tenant")
   @@map("users")
 }
 
@@ -450,3 +487,254 @@ model TicketAttachment {
   @@map("ticket_attachments")
 }
 
+// ─── Web/API URL Monitors ───────────────────────────────
+
+model UrlMonitor {
+  id              Int       @id @default(autoincrement()) @map("url_monitor_id")
+  name            String    @db.VarChar(255)
+  url             String    @db.VarChar(2048)
+  method          String    @default("GET") @db.VarChar(10)
+  expectedStatus  Int       @default(200) @map("expected_status")
+  checkInterval   Int       @default(300) @map("check_interval")
+  timeout         Int       @default(30000)
+  headers         Json?
+  body            String?   @db.Text
+  enabled         Boolean   @default(true)
+  status          String    @default("unknown") @db.VarChar(20)
+  lastCheckedAt   DateTime? @map("last_checked_at")
+  lastResponseMs  Int?      @map("last_response_ms")
+  locationId      Int?      @map("location_id")
+  location        Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  // Multi-tenant
+  tenantId        Int?      @map("tenant_id")
+  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([locationId], map: "idx_url_monitors_location")
+  @@index([tenantId], map: "idx_url_monitors_tenant")
+  @@map("url_monitors")
+}
+
+// ─── Server Monitoring ──────────────────────────────────
+
+enum ServerType {
+  linux
+  windows
+
+  @@map("server_type")
+}
+
+model ServerMonitor {
+  id              Int        @id @default(autoincrement()) @map("server_id")
+  name            String     @db.VarChar(255)
+  serverType      ServerType @map("server_type")
+  ipAddress       String?    @map("ip_address") @db.VarChar(45)
+  hostname        String?    @db.VarChar(255)
+  osInfo          String?    @map("os_info") @db.VarChar(500)
+  agentToken      String     @unique @map("agent_token") @db.VarChar(255)
+  agentVersion    String?    @map("agent_version") @db.VarChar(50)
+  agentInterval   Int        @default(300) @map("agent_interval")
+  status          String     @default("unknown") @db.VarChar(20)
+  lastReportedAt  DateTime?  @map("last_reported_at")
+  enabled         Boolean    @default(true)
+  monitorOptions  Json?      @map("monitor_options")
+  locationId      Int?       @map("location_id")
+  location        Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  // Multi-tenant
+  tenantId        Int?       @map("tenant_id")
+  tenant          Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  @@index([status], map: "idx_server_monitors_status")
+  @@index([agentToken], map: "idx_server_monitors_token")
+  @@index([locationId], map: "idx_server_monitors_location")
+  @@index([tenantId], map: "idx_server_monitors_tenant")
+  @@map("server_monitors")
+}
+
+// ─── Billing: Enums ─────────────────────────────────────
+
+enum SubscriptionStatus {
+  trial
+  active
+  past_due
+  suspended
+  cancelled
+
+  @@map("subscription_status")
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  expired
+  refunded
+
+  @@map("payment_status")
+}
+
+// ─── Billing: Tenant ────────────────────────────────────
+
+model Tenant {
+  id            Int      @id @default(autoincrement()) @map("tenant_id")
+  name          String   @db.VarChar(255)
+  slug          String   @unique @db.VarChar(100)
+  contactEmail  String   @map("contact_email") @db.VarChar(255)
+  contactPhone  String?  @map("contact_phone") @db.VarChar(50)
+  company       String?  @db.VarChar(255)
+  isActive      Boolean  @default(true) @map("is_active")
+
+  users          User[]
+  subscriptions  Subscription[]
+  invoices       Invoice[]
+  devices        Device[]
+  locations      Location[]
+  serverMonitors ServerMonitor[]
+  urlMonitors    UrlMonitor[]
+  deviceGroups   DeviceGroup[]
+  alertRules     AlertRule[]
+  invitations    TenantInvitation[]
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([slug], map: "idx_tenants_slug")
+  @@map("tenants")
+}
+
+// ─── Billing: Plan ──────────────────────────────────────
+
+model Plan {
+  id                  Int      @id @default(autoincrement()) @map("plan_id")
+  name                String   @unique @db.VarChar(100)
+  slug                String   @unique @db.VarChar(100)
+  description         String?  @db.Text
+  priceMonthly        Int      @default(0) @map("price_monthly")
+  priceYearly         Int?     @map("price_yearly")
+  currency            String   @default("IDR") @db.VarChar(5)
+
+  // Limits
+  maxDevices          Int      @default(5) @map("max_devices")
+  maxServers          Int      @default(2) @map("max_servers")
+  maxUrlMonitors      Int      @default(3) @map("max_url_monitors")
+  maxUsers            Int      @default(1) @map("max_users")
+  dataRetentionDays   Int      @default(7) @map("data_retention_days")
+  minPollingInterval  Int      @default(600) @map("min_polling_interval")
+
+  // Feature flags (JSON)
+  features            Json     @default("{}")
+
+  isPublic            Boolean  @default(true) @map("is_public")
+  sortOrder           Int      @default(0) @map("sort_order")
+
+  subscriptions       Subscription[]
+
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("plans")
+}
+
+// ─── Billing: Subscription ──────────────────────────────
+
+model Subscription {
+  id                  Int                @id @default(autoincrement()) @map("subscription_id")
+  tenantId            Int                @map("tenant_id")
+  planId              Int                @map("plan_id")
+  status              SubscriptionStatus @default(trial)
+  trialEndsAt         DateTime?          @map("trial_ends_at")
+  currentPeriodStart  DateTime           @map("current_period_start")
+  currentPeriodEnd    DateTime           @map("current_period_end")
+  cancelledAt         DateTime?          @map("cancelled_at")
+
+  tenant              Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan                Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments            Payment[]
+  invoices            Invoice[]
+
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  @@index([tenantId], map: "idx_subscriptions_tenant")
+  @@index([status], map: "idx_subscriptions_status")
+  @@map("subscriptions")
+}
+
+// ─── Billing: Payment ───────────────────────────────────
+
+model Payment {
+  id                  Int           @id @default(autoincrement()) @map("payment_id")
+  subscriptionId      Int           @map("subscription_id")
+  midtransOrderId     String        @unique @map("midtrans_order_id") @db.VarChar(100)
+  midtransTransId     String?       @map("midtrans_trans_id") @db.VarChar(100)
+  snapToken           String?       @map("snap_token") @db.VarChar(255)
+  snapRedirectUrl     String?       @map("snap_redirect_url") @db.VarChar(512)
+  amount              Int
+  currency            String        @default("IDR") @db.VarChar(5)
+  status              PaymentStatus @default(pending)
+  paymentType         String?       @map("payment_type") @db.VarChar(50)
+  paidAt              DateTime?     @map("paid_at")
+  rawNotification     Json?         @map("raw_notification")
+
+  subscription        Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  @@index([subscriptionId], map: "idx_payments_subscription")
+  @@index([status], map: "idx_payments_status")
+  @@map("payments")
+}
+
+// ─── Billing: Invoice ───────────────────────────────────
+
+model Invoice {
+  id                  Int       @id @default(autoincrement()) @map("invoice_id")
+  invoiceNumber       String    @unique @map("invoice_number") @db.VarChar(50)
+  tenantId            Int       @map("tenant_id")
+  subscriptionId      Int       @map("subscription_id")
+  amount              Int
+  currency            String    @default("IDR") @db.VarChar(5)
+  periodStart         DateTime  @map("period_start")
+  periodEnd           DateTime  @map("period_end")
+  status              String    @default("unpaid") @db.VarChar(20)
+  paidAt              DateTime? @map("paid_at")
+
+  tenant              Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription        Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId], map: "idx_invoices_tenant")
+  @@index([subscriptionId], map: "idx_invoices_subscription")
+  @@map("invoices")
+}
+
+// ─── Tenant Invitation ──────────────────────────────────
+
+model TenantInvitation {
+  id          Int       @id @default(autoincrement()) @map("invitation_id")
+  tenantId    Int       @map("tenant_id")
+  email       String    @db.VarChar(255)
+  role        UserRole  @default(viewer)
+  token       String    @unique @db.VarChar(255)
+  expiresAt   DateTime  @map("expires_at")
+  acceptedAt  DateTime? @map("accepted_at")
+  invitedById Int       @map("invited_by_id")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy   User      @relation("InvitedBy", fields: [invitedById], references: [id])
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId], map: "idx_invitations_tenant")
+  @@index([token], map: "idx_invitations_token")
+  @@map("tenant_invitations")
+}

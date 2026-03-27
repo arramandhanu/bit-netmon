@@ -3,6 +3,7 @@ import {
     Post,
     Get,
     Put,
+    Patch,
     Delete,
     Body,
     Param,
@@ -52,6 +53,29 @@ export class AuthController {
     @ApiOperation({ summary: 'Get current authenticated user profile' })
     getProfile(@Request() req: any) {
         return this.authService.getProfile(req.user.id);
+    }
+
+    @Patch('profile')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Update own profile' })
+    updateProfile(
+        @Request() req: any,
+        @Body() dto: { displayName?: string; fullName?: string; phone?: string },
+    ) {
+        return this.authService.updateProfile(req.user.id, dto);
+    }
+
+    @Post('change-password')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Change own password' })
+    changePassword(
+        @Request() req: any,
+        @Body() dto: { currentPassword: string; newPassword: string },
+    ) {
+        return this.authService.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
     }
 
     @Get('users')

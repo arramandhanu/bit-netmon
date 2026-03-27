@@ -17,6 +17,7 @@ interface TokenPayload {
     sub: number;
     username: string;
     role: string;
+    tenantId?: number | null;
 }
 
 @Injectable()
@@ -92,9 +93,12 @@ export class AuthService implements OnModuleInit {
     }
 
     async login(username: string, password: string, ipAddress?: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { username },
-        });
+        // Always try email lookup first (all SaaS users login with email),
+        // then fallback to username lookup (for admin)
+        let user = await this.prisma.user.findFirst({ where: { email: username } });
+        if (!user) {
+            user = await this.prisma.user.findUnique({ where: { username } });
+        }
 
         if (!user || !user.isActive) {
             // Log failed login
@@ -106,6 +110,9 @@ export class AuthService implements OnModuleInit {
             });
             throw new UnauthorizedException('Invalid credentials');
         }
+
+        // Email verification is now checked on the frontend via a banner
+        // instead of blocking login entirely
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) {
@@ -129,6 +136,7 @@ export class AuthService implements OnModuleInit {
             sub: user.id,
             username: user.username,
             role: user.role,
+            tenantId: user.tenantId,
         };
 
         const expiresInEnv = this.config.get<string>('jwt.expiresIn', '15m');
@@ -165,6 +173,8 @@ export class AuthService implements OnModuleInit {
                 username: user.username,
                 email: user.email,
                 role: user.role,
+                tenantId: user.tenantId,
+                emailVerified: user.emailVerified,
             },
         };
     }
@@ -189,6 +199,7 @@ export class AuthService implements OnModuleInit {
                 sub: user.id,
                 username: user.username,
                 role: user.role,
+                tenantId: user.tenantId,
             };
 
             const expiresInEnv = this.config.get<string>('jwt.expiresIn', '15m');
@@ -216,6 +227,7 @@ export class AuthService implements OnModuleInit {
                 isActive: true,
                 lastLoginAt: true,
                 createdAt: true,
+                tenantId: true,
             },
         });
 
@@ -289,5 +301,48 @@ export class AuthService implements OnModuleInit {
             select: { id: true, username: true, isActive: true },
         });
     }
-}
 
+    /**
+     * Update own profile (any authenticated user).
+     */
+    async updateProfile(userId: number, data: { displayName?: string; fullName?: string; phone?: string }) {
+        const updateData: any = {};
+        if (data.displayName !== undefined) updateData.displayName = data.displayName;
+        if (data.fullName !== undefined) updateData.fullName = data.fullName;
+        if (data.phone !== undefined) updateData.phone = data.phone;
+
+        return this.prisma.user.update({
+            where: { id: userId },
+            data: updateData,
+            select: {
+                id: true,
+                username: true,
+                email: true,
+                displayName: true,
+                fullName: true,
+                phone: true,
+                role: true,
+                tenantId: true,
+            },
+        });
+    }
+
+    /**
+     * Change own password.
+     */
+    async changePassword(userId: number, currentPassword: string, newPassword: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new UnauthorizedException('User not found');
+
+        const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!valid) throw new UnauthorizedException('Current password is incorrect');
+
+        const passwordHash = await bcrypt.hash(newPassword, 10);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { passwordHash },
+        });
+
+        return { message: 'Password changed successfully' };
+    }
+}

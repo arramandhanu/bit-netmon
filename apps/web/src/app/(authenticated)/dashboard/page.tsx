@@ -16,6 +16,12 @@ import {
     Shield,
     Search,
     Router,
+    CreditCard,
+    HardDrive,
+    Globe,
+    Sparkles,
+    Crown,
+    ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useDashboard } from '@/hooks/use-dashboard';
@@ -23,9 +29,144 @@ import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
 import { MetricCard } from '@/components/ui/metric-card';
 import { getStoredUser } from '@/hooks/use-auth';
+import { useUptimeSummary } from '@/hooks/use-uptime';
+import { useSubscription } from '@/hooks/use-billing';
 
+function formatRupiah(n: number) {
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+}
+
+function UsageMeterSmall({ label, used, limit, unlimited }: { label: string; used: number; limit: number; unlimited: boolean }) {
+    const pct = unlimited ? 0 : limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+    const color = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500';
+    return (
+        <div>
+            <div className="flex items-center justify-between text-sm mb-1.5">
+                <span className="text-gray-600 font-medium">{label}</span>
+                <span className="text-gray-900 font-semibold">{used} / {unlimited ? '∞' : limit}</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${color}`}
+                    style={{ width: unlimited ? '5%' : `${Math.max(pct, 2)}%` }} />
+            </div>
+        </div>
+    );
+}
+
+/* ─── User SaaS Dashboard ──────────────────────────── */
+function UserDashboard() {
+    const { data: billing, loading } = useSubscription();
+    const currentUser = getStoredUser();
+
+    if (loading) return <DashboardSkeleton />;
+
+    const plan = billing?.plan;
+    const sub = billing?.subscription;
+    const usage = billing?.usage;
+    const isTrialing = sub?.status === 'trial';
+    const trialDaysLeft = sub?.trialEndsAt
+        ? Math.max(0, Math.ceil((new Date(sub.trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+        : 0;
+
+    return (
+        <div className="space-y-6">
+            {/* Welcome */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 text-white">
+                <h1 className="text-2xl font-bold">Selamat datang, {currentUser?.username}! 👋</h1>
+                <p className="text-blue-100 mt-1 text-sm">
+                    {plan ? `Paket ${plan.name}` : 'Memuat...'} •{' '}
+                    {isTrialing ? `Trial — ${trialDaysLeft} hari tersisa` : sub?.status === 'active' ? 'Aktif' : 'Tidak aktif'}
+                </p>
+            </div>
+
+            {/* Trial Banner */}
+            {isTrialing && trialDaysLeft <= 7 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                    <Clock className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                        <h3 className="font-semibold text-amber-800 text-sm">Trial segera berakhir!</h3>
+                        <p className="text-xs text-amber-700 mt-0.5">
+                            Upgrade ke paket berbayar untuk melanjutkan akses semua fitur.
+                        </p>
+                    </div>
+                    <Link href="/billing"
+                        className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition-colors flex items-center gap-1">
+                        Upgrade <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                </div>
+            )}
+
+            {/* Plan + KPI */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl border-2 border-blue-200 p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Crown className="h-5 w-5 text-blue-600" />
+                        <h3 className="font-bold text-gray-900">Paket {plan?.name || '-'}</h3>
+                    </div>
+                    <span className="text-xl font-black text-gray-900">
+                        {plan?.priceMonthly === 0 ? 'GRATIS' : plan ? formatRupiah(plan.priceMonthly) : '-'}
+                    </span>
+                    {plan && plan.priceMonthly > 0 && <span className="text-sm text-gray-400">/bulan</span>}
+                    <div className="mt-4">
+                        <Link href="/billing"
+                            className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1">
+                            Kelola Subscription <ChevronRight className="h-3 w-3" />
+                        </Link>
+                    </div>
+                </div>
+
+                <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+                    <h3 className="font-semibold text-gray-900 mb-4 text-sm">Penggunaan Resource</h3>
+                    <div className="space-y-3">
+                        {usage && (
+                            <>
+                                <UsageMeterSmall label="Network Devices" {...usage.devices} />
+                                <UsageMeterSmall label="Server Agents" {...usage.servers} />
+                                <UsageMeterSmall label="URL Monitors" {...usage.urlMonitors} />
+                                <UsageMeterSmall label="Users" {...usage.users} />
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick Links */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                    { label: 'Devices', href: '/devices', icon: Server, color: 'bg-blue-100 text-blue-600' },
+                    { label: 'Uptime / SLA', href: '/uptime', icon: Clock, color: 'bg-emerald-100 text-emerald-600' },
+                    { label: 'Alerts', href: '/alerts', icon: AlertTriangle, color: 'bg-amber-100 text-amber-600' },
+                    { label: 'Tickets', href: '/tickets', icon: Ticket, color: 'bg-purple-100 text-purple-600' },
+                ].map(link => (
+                    <Link key={link.href} href={link.href}
+                        className="bg-white rounded-xl border border-gray-200 p-4 hover:border-gray-300 hover:shadow-sm transition-all flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${link.color}`}>
+                            <link.icon className="h-5 w-5" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-700">{link.label}</span>
+                    </Link>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+/* ─── Admin/Operator Dashboard ─────────────────────── */
 export default function DashboardPage() {
+    const currentUser = getStoredUser();
+    const userRole = currentUser?.role || 'viewer';
+
+    // Show simplified SaaS dashboard for 'user' role
+    if (userRole === 'user') {
+        return <UserDashboard />;
+    }
+
+    return <AdminDashboard />;
+}
+
+function AdminDashboard() {
     const { data, loading, error, refetch } = useDashboard();
+    const { data: uptimeData } = useUptimeSummary();
     const currentUser = getStoredUser();
     const userRole = currentUser?.role || 'viewer';
     const isAdminMode = userRole === 'admin' || userRole === 'operator';
@@ -55,7 +196,7 @@ export default function DashboardPage() {
     return (
         <div className="space-y-6">
             {/* KPI Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <MetricCard
                     label="Total Devices"
                     value={data.totalDevices.toLocaleString()}
@@ -79,6 +220,14 @@ export default function DashboardPage() {
                     iconBg="bg-red-100"
                     iconColor="text-red-600"
                     detail={data.devicesDown > 0 ? 'Requires attention' : 'All clear'}
+                />
+                <MetricCard
+                    label="Fleet SLA"
+                    value={uptimeData ? `${uptimeData.fleetUptimePercent}%` : '-'}
+                    icon={Clock}
+                    iconBg="bg-blue-100"
+                    iconColor="text-blue-600"
+                    detail="Last 24 Hours"
                 />
                 <MetricCard
                     label="Avg CPU / Memory"

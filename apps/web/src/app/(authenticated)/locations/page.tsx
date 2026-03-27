@@ -218,7 +218,7 @@ export default function LocationsPage() {
     if (error || !data) return <ErrorState message={error || 'No data'} onRetry={refetch} />;
 
     const locations = data.items;
-    const totalDevices = locations.reduce((s, l) => s + (l._count?.devices || 0), 0);
+    const totalDevices = locations.reduce((s, l) => s + (l._count?.devices || 0) + (l._count?.serverMonitors || 0) + (l._count?.urlMonitors || 0), 0);
     const withCoords = locations.filter(l => l.latitude && l.longitude).length;
 
     return (
@@ -256,7 +256,7 @@ export default function LocationsPage() {
             {/* Card Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {locations.map((loc) => {
-                    const deviceCount = loc._count?.devices || 0;
+                    const deviceCount = (loc._count?.devices || 0) + (loc._count?.serverMonitors || 0) + (loc._count?.urlMonitors || 0);
                     return (
                         <div
                             key={loc.id}

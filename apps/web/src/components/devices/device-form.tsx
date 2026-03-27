@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
     ArrowLeft, Save, Loader2, CheckCircle, XCircle, Zap,
     Settings, Wifi, Clock, SlidersHorizontal, Trash2, ChevronRight, Eye, EyeOff,
-    Shield, Server,
+    Shield, Server, MapPin,
 } from 'lucide-react';
 import { api } from '@/lib/api-client';
 
@@ -33,6 +33,7 @@ export interface DeviceFormData {
     ipAddress: string;
     displayName: string;
     deviceType: string;
+    locationId: string;
     snmpVersion: string;
     snmpCommunity: string;
     snmpPort: string;
@@ -50,6 +51,7 @@ export const DEFAULT_FORM_DATA: DeviceFormData = {
     ipAddress: '',
     displayName: '',
     deviceType: 'router',
+    locationId: '',
     snmpVersion: 'v2c',
     snmpCommunity: 'public',
     snmpPort: '161',
@@ -110,6 +112,14 @@ export function DeviceForm({
 }: DeviceFormProps) {
     const [activeSection, setActiveSection] = useState('general');
     const [showPassword, setShowPassword] = useState(false);
+    const [locations, setLocations] = useState<{ id: number; name: string; code: string }[]>([]);
+
+    // Fetch locations for dropdown
+    useEffect(() => {
+        api.get('/locations?limit=100').then(({ data }: any) => {
+            setLocations(data.items || []);
+        }).catch(() => {});
+    }, []);
 
     // SNMP test
     const [testing, setTesting] = useState(false);
@@ -119,10 +129,10 @@ export function DeviceForm({
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     // Refs for scroll-to-section
-    const sectionRefs: Record<string, React.RefObject<HTMLDivElement>> = {
-        general: useRef<HTMLDivElement>(null),
-        snmp: useRef<HTMLDivElement>(null),
-        polling: useRef<HTMLDivElement>(null),
+    const sectionRefs: Record<string, React.RefObject<HTMLDivElement | null>> = {
+        general: useRef<HTMLDivElement | null>(null),
+        snmp: useRef<HTMLDivElement | null>(null),
+        polling: useRef<HTMLDivElement | null>(null),
     };
 
     const update = (field: keyof DeviceFormData, value: any) => {
@@ -352,7 +362,7 @@ export function DeviceForm({
                 {/* Right Content */}
                 <div className="flex-grow space-y-6 w-full">
                     {/* ── SECTION: Device Information ── */}
-                    <div id="general" ref={sectionRefs.general} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden scroll-mt-24">
+                    <div id="general" ref={sectionRefs.general as any} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden scroll-mt-24">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
                             <Server className="h-4 w-4 text-blue-500" />
                             <h3 className="font-bold text-gray-900">Device Information</h3>
@@ -402,11 +412,26 @@ export function DeviceForm({
                                     ))}
                                 </select>
                             </div>
+                            <div className="space-y-1">
+                                <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                                    <MapPin className="h-3.5 w-3.5 text-gray-400" /> Location
+                                </label>
+                                <select
+                                    value={formData.locationId}
+                                    onChange={(e) => update('locationId', e.target.value)}
+                                    className={selectClass}
+                                >
+                                    <option value="">No location assigned</option>
+                                    {locations.map((loc) => (
+                                        <option key={loc.id} value={String(loc.id)}>{loc.name} ({loc.code})</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
 
                     {/* ── SECTION: SNMP Configuration ── */}
-                    <div id="snmp" ref={sectionRefs.snmp} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden scroll-mt-24">
+                    <div id="snmp" ref={sectionRefs.snmp as any} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden scroll-mt-24">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
                             <Wifi className="h-4 w-4 text-blue-500" />
                             <h3 className="font-bold text-gray-900">SNMP Configuration</h3>
@@ -593,7 +618,7 @@ export function DeviceForm({
                     </div>
 
                     {/* ── SECTION: Polling Settings ── */}
-                    <div id="polling" ref={sectionRefs.polling} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden scroll-mt-24">
+                    <div id="polling" ref={sectionRefs.polling as any} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden scroll-mt-24">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
                             <Clock className="h-4 w-4 text-blue-500" />
                             <h3 className="font-bold text-gray-900">Polling Settings</h3>

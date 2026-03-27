@@ -9,11 +9,11 @@ import {
     Query,
     UseGuards,
     ParseIntPipe,
-    Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles, RequirePermission } from '../../common/guards/roles.guard';
+import { CurrentUser, TenantUser } from '../../common/guards/tenant.guard';
 import { TicketsService } from './tickets.service';
 import {
     CreateTicketDto, UpdateTicketDto, TicketQueryDto,
@@ -32,29 +32,36 @@ export class TicketsController {
     @Post('tickets')
     @RequirePermission('tickets:write')
     @ApiOperation({ summary: 'Create a new ticket' })
-    create(@Body() dto: CreateTicketDto, @Req() req: any) {
-        return this.ticketsService.create(dto, req.user?.id || 0);
+    create(@Body() dto: CreateTicketDto, @CurrentUser() user: TenantUser) {
+        return this.ticketsService.create(dto, user);
     }
 
     @Get('tickets')
     @RequirePermission('tickets:read')
     @ApiOperation({ summary: 'List tickets with filters and pagination' })
-    findAll(@Query() query: TicketQueryDto) {
-        return this.ticketsService.findAll(query);
+    findAll(@Query() query: TicketQueryDto, @CurrentUser() user: TenantUser) {
+        return this.ticketsService.findAll(query, user);
     }
 
     @Get('tickets/stats')
     @RequirePermission('tickets:read')
     @ApiOperation({ summary: 'Get ticket statistics for dashboard' })
-    getStats() {
-        return this.ticketsService.getStats();
+    getStats(@CurrentUser() user: TenantUser) {
+        return this.ticketsService.getStats(user);
+    }
+
+    @Get('tickets/team-members')
+    @RequirePermission('tickets:read')
+    @ApiOperation({ summary: 'Get team members for ticket assignment (same tenant)' })
+    getTeamMembers(@CurrentUser() user: TenantUser) {
+        return this.ticketsService.getTeamMembers(user);
     }
 
     @Get('tickets/:id')
     @RequirePermission('tickets:read')
     @ApiOperation({ summary: 'Get ticket detail with comments' })
-    findOne(@Param('id', ParseIntPipe) id: number) {
-        return this.ticketsService.findOne(id);
+    findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: TenantUser) {
+        return this.ticketsService.findOne(id, user);
     }
 
     @Patch('tickets/:id')
@@ -63,16 +70,16 @@ export class TicketsController {
     update(
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateTicketDto,
-        @Req() req: any,
+        @CurrentUser() user: TenantUser,
     ) {
-        return this.ticketsService.update(id, dto, req.user?.id || 0);
+        return this.ticketsService.update(id, dto, user);
     }
 
     @Delete('tickets/:id')
     @Roles('admin')
     @ApiOperation({ summary: 'Delete a ticket (admin only)' })
-    delete(@Param('id', ParseIntPipe) id: number) {
-        return this.ticketsService.delete(id);
+    delete(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: TenantUser) {
+        return this.ticketsService.delete(id, user);
     }
 
     // ─── Comments ───────────────────────────────────────
@@ -83,9 +90,9 @@ export class TicketsController {
     addComment(
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: CreateTicketCommentDto,
-        @Req() req: any,
+        @CurrentUser() user: TenantUser,
     ) {
-        return this.ticketsService.addComment(id, dto, req.user?.id || 0);
+        return this.ticketsService.addComment(id, dto, user.id);
     }
 
     // ─── Assignment ─────────────────────────────────────
@@ -96,9 +103,9 @@ export class TicketsController {
     assign(
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: AssignTicketDto,
-        @Req() req: any,
+        @CurrentUser() user: TenantUser,
     ) {
-        return this.ticketsService.assign(id, dto, req.user?.id || 0);
+        return this.ticketsService.assign(id, dto, user);
     }
 
     // ─── Alert → Ticket ────────────────────────────────
@@ -108,8 +115,8 @@ export class TicketsController {
     @ApiOperation({ summary: 'Create a ticket from an alert' })
     createFromAlert(
         @Param('id', ParseIntPipe) alertId: number,
-        @Req() req: any,
+        @CurrentUser() user: TenantUser,
     ) {
-        return this.ticketsService.createFromAlert(alertId, req.user?.id || 0);
+        return this.ticketsService.createFromAlert(alertId, user);
     }
 }

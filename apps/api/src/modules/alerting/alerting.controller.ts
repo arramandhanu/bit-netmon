@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles, RequirePermission } from '../../common/guards/roles.guard';
+import { CurrentUser, TenantUser } from '../../common/guards/tenant.guard';
 import { AlertingService } from './alerting.service';
 import { CreateAlertRuleDto, UpdateAlertRuleDto, AlertHistoryQueryDto } from './alerting.dto';
 
@@ -29,22 +30,22 @@ export class AlertingController {
     @Post('alerts/rules')
     @RequirePermission('alerts:write')
     @ApiOperation({ summary: 'Create a new alert rule' })
-    createRule(@Body() dto: CreateAlertRuleDto) {
-        return this.alertingService.createRule(dto);
+    createRule(@Body() dto: CreateAlertRuleDto, @CurrentUser() user: TenantUser) {
+        return this.alertingService.createRule(dto, user);
     }
 
     @Get('alerts/rules')
     @RequirePermission('alerts:read')
     @ApiOperation({ summary: 'List all alert rules' })
-    listRules() {
-        return this.alertingService.listRules();
+    listRules(@CurrentUser() user: TenantUser) {
+        return this.alertingService.listRules(user);
     }
 
     @Get('alerts/rules/:id')
     @RequirePermission('alerts:read')
     @ApiOperation({ summary: 'Get alert rule with recent alerts' })
-    getRule(@Param('id', ParseIntPipe) id: number) {
-        return this.alertingService.getRule(id);
+    getRule(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: TenantUser) {
+        return this.alertingService.getRule(id, user);
     }
 
     @Patch('alerts/rules/:id')
@@ -53,15 +54,16 @@ export class AlertingController {
     updateRule(
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateAlertRuleDto,
+        @CurrentUser() user: TenantUser,
     ) {
-        return this.alertingService.updateRule(id, dto);
+        return this.alertingService.updateRule(id, dto, user);
     }
 
     @Delete('alerts/rules/:id')
     @Roles('admin')
     @ApiOperation({ summary: 'Delete alert rule' })
-    deleteRule(@Param('id', ParseIntPipe) id: number) {
-        return this.alertingService.deleteRule(id);
+    deleteRule(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: TenantUser) {
+        return this.alertingService.deleteRule(id, user);
     }
 
     // ─── Alert History ──────────────────────────────────

@@ -23,6 +23,12 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { UptimeModule } from './modules/uptime/uptime.module';
+import { UrlMonitorModule } from './modules/url-monitor/url-monitor.module';
+import { ServerMonitorModule } from './modules/server-monitor/server-monitor.module';
+import { DevopsModule } from './modules/devops/devops.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { TenantModule } from './modules/tenant/tenant.module';
 
 @Module({
     imports: [
@@ -73,6 +79,12 @@ import { TicketsModule } from './modules/tickets/tickets.module';
         AuditModule,
         ReportsModule,
         TicketsModule,
+        UptimeModule,
+        UrlMonitorModule,
+        ServerMonitorModule,
+        DevopsModule,
+        BillingModule,
+        TenantModule,
 
         // ─── Rate Limiting ─────────────────────────────
         ThrottlerModule.forRoot([{

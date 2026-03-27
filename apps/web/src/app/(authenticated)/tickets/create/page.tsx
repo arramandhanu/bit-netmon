@@ -8,7 +8,7 @@ import {
     FileText, Image, Trash2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
-import { createTicket } from '@/hooks/use-tickets';
+import { createTicket, fetchTeamMembers } from '@/hooks/use-tickets';
 import { api } from '@/lib/api-client';
 
 /* ─── Types ────────────────────────────────────────────── */
@@ -48,10 +48,10 @@ export default function CreateTicketPage() {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Fetch users
+    // Fetch team members (same tenant only)
     useEffect(() => {
-        api.get<UserOption[]>('/auth/users')
-            .then(res => setUsers(res.data))
+        fetchTeamMembers()
+            .then(members => setUsers(members))
             .catch(() => { });
     }, []);
 
@@ -159,7 +159,7 @@ export default function CreateTicketPage() {
             {/* Title */}
             <div>
                 <h2 className="text-3xl font-extrabold tracking-tight">Create New Ticket</h2>
-                <p className="mt-1 text-muted-foreground">Submit a new support request to the technical team.</p>
+                <p className="mt-1 text-muted-foreground">Submit a support request to your team. If no assignee is selected, it will be auto-assigned to your team lead.</p>
             </div>
 
             {error && (
@@ -334,6 +334,7 @@ export default function CreateTicketPage() {
                                     <option value="problem">Problem</option>
                                     <option value="change_request">Change Request</option>
                                     <option value="maintenance">Maintenance</option>
+                                    <option value="support_request">Support Request</option>
                                 </select>
                             </div>
 

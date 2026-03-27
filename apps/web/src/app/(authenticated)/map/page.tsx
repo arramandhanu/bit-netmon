@@ -5,6 +5,8 @@ import { Map as MapIcon, Server, GitBranch, Building2 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { useLocations, Location } from '@/hooks/use-locations';
 import { useDevices, Device } from '@/hooks/use-devices';
+import { useServerMonitorOverview } from '@/hooks/use-server-monitors';
+import { useUrlMonitorOverview } from '@/hooks/use-url-monitors';
 import { DashboardSkeleton } from '@/components/ui/loading-skeleton';
 import { ErrorState } from '@/components/ui/error-state';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -167,6 +169,10 @@ function TopologyView({
 
 export default function NetworkMapPage() {
     const mapRef = useRef<HTMLDivElement>(null);
+    const mapInstanceRef = useRef<any>(null);
+    const serverLayerRef = useRef<any>(null);
+    const urlLayerRef = useRef<any>(null);
+    const leafletRef = useRef<any>(null);
     const [mapReady, setMapReady] = useState(false);
     const [tab, setTab] = useState<'geo' | 'topology'>('geo');
     const [topoGroup, setTopoGroup] = useState<'subnet' | 'location'>('subnet');
@@ -176,14 +182,19 @@ export default function NetworkMapPage() {
 
     const { data, loading, error, refetch } = useLocations({ limit: 100 });
     const { data: devicesData, loading: devicesLoading } = useDevices();
+    const { data: serverData } = useServerMonitorOverview(0);
+    const { data: urlData } = useUrlMonitorOverview(0);
 
+    /* ─── Effect 1: Initialize Leaflet map & location markers ─── */
     useEffect(() => {
         if (tab !== 'geo' || !mapRef.current || !data) return;
 
         const locationsWithCoords = data.items.filter((l: any) => l.latitude && l.longitude);
-        if (locationsWithCoords.length === 0) return;
+        if (locationsWithCoords.length === 0) {
+            setMapReady(true); // No coords to show, but map area is ready
+            return;
+        }
 
-        let mapInstance: any = null;
         let cancelled = false;
 
         Promise.all([
@@ -192,12 +203,15 @@ export default function NetworkMapPage() {
         ]).then(([L]) => {
             if (cancelled || !mapRef.current) return;
 
-            // Prevent "Map container is already initialized" error
-            if ((mapRef.current as any)._leaflet_id) {
+            // If map already exists from a previous init, skip
+            if (mapInstanceRef.current) {
+                setMapReady(true);
                 return;
             }
 
-            mapInstance = L.map(mapRef.current, {
+            leafletRef.current = L;
+
+            const map = L.map(mapRef.current, {
                 zoomControl: true,
                 attributionControl: false,
             }).setView([-2.5, 117.0], 5);
@@ -205,7 +219,9 @@ export default function NetworkMapPage() {
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                 subdomains: 'abcd',
                 maxZoom: 19,
-            }).addTo(mapInstance);
+            }).addTo(map);
+
+            mapInstanceRef.current = map;
 
             locationsWithCoords.forEach((loc: any) => {
                 const color = getLocationHealth(loc);
@@ -218,7 +234,7 @@ export default function NetworkMapPage() {
                     iconAnchor: [8, 8],
                 });
 
-                const marker = L.marker([Number(loc.latitude), Number(loc.longitude)], { icon }).addTo(mapInstance);
+                const marker = L.marker([Number(loc.latitude), Number(loc.longitude)], { icon }).addTo(map);
 
                 // Build status breakdown for popup
                 const summary = loc.statusSummary || {};
@@ -244,7 +260,7 @@ export default function NetworkMapPage() {
                 // If this is the focused location, zoom to it
                 if (focusId && Number(focusId) === loc.id) {
                     setTimeout(() => {
-                        mapInstance.setView([Number(loc.latitude), Number(loc.longitude)], 14, { animate: true });
+                        map.setView([Number(loc.latitude), Number(loc.longitude)], 14, { animate: true });
                         marker.openPopup();
                     }, 500);
                 }
@@ -258,7 +274,7 @@ export default function NetworkMapPage() {
                     weight: 1,
                     dashArray: '6,6',
                     opacity: 0.7,
-                }).addTo(mapInstance);
+                }).addTo(map);
             }
 
             setMapReady(true);
@@ -266,10 +282,127 @@ export default function NetworkMapPage() {
 
         return () => {
             cancelled = true;
-            mapInstance?.remove();
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current.remove();
+                mapInstanceRef.current = null;
+                leafletRef.current = null;
+            }
+            // Also clean up stale _leaflet_id if async import hadn't resolved yet
+            if (mapRef.current) {
+                delete (mapRef.current as any)._leaflet_id;
+            }
             setMapReady(false);
         };
     }, [data, tab, focusId]);
+
+    /* ─── Effect 2: Add/update server monitor markers (separate layer) ─── */
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        const L = leafletRef.current;
+        if (!map || !L || !serverData?.servers) return;
+
+        // Remove old server markers layer
+        if (serverLayerRef.current) {
+            map.removeLayer(serverLayerRef.current);
+        }
+
+        const layerGroup = L.layerGroup();
+
+        serverData.servers.forEach((srv: any) => {
+            // Only show on map if server has a location with coordinates
+            const lat = srv.latitude ? Number(srv.latitude) : null;
+            const lng = srv.longitude ? Number(srv.longitude) : null;
+            if (!lat || !lng) return;
+
+            const sColor = srv.status === 'up' ? '#10b981' : srv.status === 'down' ? '#ef4444' : '#94a3b8';
+
+            const serverIcon = L.divIcon({
+                className: 'server-marker',
+                html: `<div style="width:14px;height:14px;background:${sColor};border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 10px ${sColor}50;transform:rotate(45deg);transition:transform 0.15s;"></div>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7],
+            });
+
+            const sMarker = L.marker([lat, lng], { icon: serverIcon });
+            sMarker.bindPopup(`
+                <div style="font-family:system-ui;font-size:12px;min-width:180px;cursor:pointer" onclick="window.location.href='/server-monitor/${srv.server_id}'">
+                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${sColor}"></span>
+                        <strong style="font-size:13px;">${srv.name}</strong>
+                    </div>
+                    <span style="color:#94a3b8;">${srv.server_type} · ${srv.ip_address || 'N/A'}</span><br/>
+                    ${srv.location_name ? `<span style="color:#94a3b8;">📍 ${srv.location_name}</span><br/>` : ''}
+                    <span style="color:${sColor};font-weight:600;text-transform:uppercase;font-size:11px">${srv.status}</span>
+                    <div style="margin-top:6px;color:#8b5cf6;font-size:11px;font-weight:500">Click to view details →</div>
+                </div>
+            `);
+            layerGroup.addLayer(sMarker);
+        });
+
+        layerGroup.addTo(map);
+        serverLayerRef.current = layerGroup;
+
+        return () => {
+            if (serverLayerRef.current && mapInstanceRef.current) {
+                mapInstanceRef.current.removeLayer(serverLayerRef.current);
+                serverLayerRef.current = null;
+            }
+        };
+    }, [serverData, mapReady]);
+
+    /* ─── Effect 3: Add/update URL monitor markers (separate layer) ─── */
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        const L = leafletRef.current;
+        if (!map || !L || !urlData?.monitors) return;
+
+        // Remove old URL markers layer
+        if (urlLayerRef.current) {
+            map.removeLayer(urlLayerRef.current);
+        }
+
+        const layerGroup = L.layerGroup();
+
+        urlData.monitors.forEach((mon: any) => {
+            const lat = mon.latitude ? Number(mon.latitude) : null;
+            const lng = mon.longitude ? Number(mon.longitude) : null;
+            if (!lat || !lng) return;
+
+            const mColor = mon.status === 'up' ? '#10b981' : mon.status === 'down' ? '#ef4444' : '#94a3b8';
+
+            const urlIcon = L.divIcon({
+                className: 'url-marker',
+                html: `<div style="width:12px;height:12px;background:${mColor};border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 10px ${mColor}50;border-radius:3px;transition:transform 0.15s;"></div>`,
+                iconSize: [12, 12],
+                iconAnchor: [6, 6],
+            });
+
+            const uMarker = L.marker([lat, lng], { icon: urlIcon });
+            uMarker.bindPopup(`
+                <div style="font-family:system-ui;font-size:12px;min-width:180px">
+                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${mColor}"></span>
+                        <strong style="font-size:13px;">${mon.name}</strong>
+                    </div>
+                    <span style="color:#94a3b8;font-size:11px">${mon.url}</span><br/>
+                    ${mon.location_name ? `<span style="color:#94a3b8;">📍 ${mon.location_name}</span><br/>` : ''}
+                    <span style="color:${mColor};font-weight:600;text-transform:uppercase;font-size:11px">${mon.status}</span>
+                    ${mon.last_response_ms != null ? `<span style="color:#94a3b8;font-size:11px"> · ${mon.last_response_ms}ms</span>` : ''}
+                </div>
+            `);
+            layerGroup.addLayer(uMarker);
+        });
+
+        layerGroup.addTo(map);
+        urlLayerRef.current = layerGroup;
+
+        return () => {
+            if (urlLayerRef.current && mapInstanceRef.current) {
+                mapInstanceRef.current.removeLayer(urlLayerRef.current);
+                urlLayerRef.current = null;
+            }
+        };
+    }, [urlData, mapReady]);
 
     if (loading && !data) return <DashboardSkeleton />;
     if (error) return <ErrorState message={error} onRetry={refetch} />;

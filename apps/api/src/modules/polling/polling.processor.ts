@@ -7,6 +7,7 @@ import { SnmpService, SnmpTarget } from '../snmp/snmp.service';
 import { DeviceClassifierService } from '../snmp/device-classifier.service';
 import { AlertEvaluatorService } from '../alerting/alert-evaluator.service';
 import { MetricsGateway } from '../metrics/metrics.gateway';
+import { UptimeService } from '../uptime/uptime.service';
 import {
     HOST_RESOURCES_OIDS,
     CISCO_OIDS,
@@ -31,6 +32,7 @@ export class PollingProcessor extends WorkerHost {
         private readonly classifier: DeviceClassifierService,
         private readonly alertEvaluator: AlertEvaluatorService,
         private readonly metricsGateway: MetricsGateway,
+        private readonly uptimeService: UptimeService,
     ) {
         super();
     }
@@ -65,6 +67,7 @@ export class PollingProcessor extends WorkerHost {
             if (!isReachable) {
                 await this.markDeviceDown(device.id, responseTime);
                 this.metricsGateway.broadcastDeviceDown(device.id, responseTime);
+                await this.uptimeService.recordCheck(device.id, 'down', responseTime, 'snmp');
                 return { deviceId, status: 'down', responseTime };
             }
 
@@ -115,7 +118,10 @@ export class PollingProcessor extends WorkerHost {
                 device_status: 'up',
             });
 
-            // 8. Broadcast real-time update via WebSocket
+            // 8. Record uptime check
+            await this.uptimeService.recordCheck(device.id, 'up', responseTime, 'snmp');
+
+            // 9. Broadcast real-time update via WebSocket
             this.metricsGateway.broadcastDeviceUpdate(device.id, {
                 status: 'up',
                 cpu: deviceMetrics.cpu,
@@ -136,6 +142,7 @@ export class PollingProcessor extends WorkerHost {
             this.logger.warn(`Poll failed for device ${device.hostname}: ${err}`);
             const responseTime = Date.now() - startTime;
             await this.markDeviceDown(device.id, responseTime);
+            await this.uptimeService.recordCheck(device.id, 'down', responseTime, 'snmp');
             return { deviceId, status: 'error', error: String(err) };
         }
     }

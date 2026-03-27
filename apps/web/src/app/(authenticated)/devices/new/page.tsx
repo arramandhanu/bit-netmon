@@ -26,6 +26,7 @@ export default function NewDevicePage() {
                 hostname: formData.hostname.trim(),
                 ipAddress: formData.ipAddress.trim(),
                 deviceType: formData.deviceType,
+                locationId: formData.locationId ? parseInt(formData.locationId) : null,
                 snmpVersion: formData.snmpVersion,
                 snmpCommunity: formData.snmpCommunity.trim() || 'public',
                 snmpPort: parseInt(formData.snmpPort) || 161,

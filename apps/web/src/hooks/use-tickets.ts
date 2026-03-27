@@ -87,9 +87,9 @@ export interface Ticket {
 export interface TicketStats {
     open: number;
     inProgress: number;
-    waiting: number;
     escalated: number;
     onHold: number;
+    waiting: number;
     resolved: number;
     closed: number;
     overdue: number;
@@ -209,5 +209,10 @@ export async function assignTicket(ticketId: number, assigneeId: number) {
 
 export async function createTicketFromAlert(alertId: number) {
     const res = await api.post(`/alerts/${alertId}/create-ticket`);
+    return res.data;
+}
+
+export async function fetchTeamMembers(): Promise<{ id: number; username: string; displayName?: string; role: string; email?: string }[]> {
+    const res = await api.get('/tickets/team-members');
     return res.data;
 }

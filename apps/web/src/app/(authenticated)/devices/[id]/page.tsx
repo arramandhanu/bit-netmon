@@ -78,15 +78,28 @@ function MetricChartPanel({ title, icon: Icon, data, unit, color, maxVal, label 
     label?: string;
 }) {
     const chartRef = useRef<HTMLDivElement>(null);
+    const instanceRef = useRef<any>(null);
     const hasData = data.length > 0;
     const latestVal = hasData ? data[data.length - 1][1] : 0;
 
+    // Create instance once
     useEffect(() => {
-        if (!chartRef.current || !hasData) return;
+        if (!chartRef.current) return;
+        instanceRef.current = echarts.init(chartRef.current);
+        const onResize = () => instanceRef.current?.resize();
+        window.addEventListener('resize', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            instanceRef.current?.dispose();
+            instanceRef.current = null;
+        };
+    }, []);
 
-        const instance = echarts.init(chartRef.current);
+    // Update chart data whenever data/options change
+    useEffect(() => {
+        if (!instanceRef.current || !hasData) return;
 
-        instance.setOption({
+        instanceRef.current.setOption({
             backgroundColor: '#fafafa',
             animation: false,
             tooltip: {
@@ -136,15 +149,7 @@ function MetricChartPanel({ title, icon: Icon, data, unit, color, maxVal, label 
                 lineStyle: { color, width: 0.5 },
                 areaStyle: { color, opacity: 0.85 },
             }],
-        });
-
-        const onResize = () => instance?.resize();
-        window.addEventListener('resize', onResize);
-
-        return () => {
-            window.removeEventListener('resize', onResize);
-            instance?.dispose();
-        };
+        }, { notMerge: true });
     }, [data, unit, color, maxVal, hasData]);
 
     const pct = maxVal ? (latestVal / maxVal) * 100 : 0;
@@ -192,16 +197,29 @@ function InterfaceTrafficPanel({ deviceId, iface, rangeIdx, hours }: {
 }) {
     const { data } = useInterfaceMetrics(deviceId, iface.ifIndex, rangeIdx);
     const chartRef = useRef<HTMLDivElement>(null);
+    const instanceRef = useRef<any>(null);
 
+    // Create instance once
     useEffect(() => {
-        if (!chartRef.current || data.length === 0) return;
+        if (!chartRef.current) return;
+        instanceRef.current = echarts.init(chartRef.current);
+        const onResize = () => instanceRef.current?.resize();
+        window.addEventListener('resize', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            instanceRef.current?.dispose();
+            instanceRef.current = null;
+        };
+    }, []);
 
-        const instance = echarts.init(chartRef.current);
+    // Update chart data
+    useEffect(() => {
+        if (!instanceRef.current || data.length === 0) return;
 
         const inData = data.map((r: any) => [new Date(r.bucket).getTime(), r.avg_in_bps || 0]);
         const outData = data.map((r: any) => [new Date(r.bucket).getTime(), r.avg_out_bps || 0]);
 
-        instance.setOption({
+        instanceRef.current.setOption({
             backgroundColor: '#fafafa',
             animation: false,
             tooltip: {
@@ -262,15 +280,7 @@ function InterfaceTrafficPanel({ deviceId, iface, rangeIdx, hours }: {
                     areaStyle: { color: '#0000ff', opacity: 0.4 },
                 },
             ],
-        });
-
-        const onResize = () => instance?.resize();
-        window.addEventListener('resize', onResize);
-
-        return () => {
-            window.removeEventListener('resize', onResize);
-            instance?.dispose();
-        };
+        }, { notMerge: true });
     }, [data, hours]);
 
     // Calculate latest and peak values from all data points

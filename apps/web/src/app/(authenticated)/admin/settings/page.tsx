@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
     Save, Bell, Server, Clock, Shield, Mail, MessageSquare, Globe, Loader2,
     LayoutDashboard, Wifi, MapPin, AlertTriangle, Ticket, Database, Search,
-    Network, BarChart3, HardDrive, Eye, Zap, RefreshCw, MonitorDot, Lock
+    Network, BarChart3, HardDrive, Eye, Zap, RefreshCw, MonitorDot, Lock, Brain, CheckCircle2
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { useSettings } from '@/hooks/use-admin';
@@ -25,6 +25,7 @@ const NAV_ITEMS = [
     { id: 'interfaces', label: 'Interfaces', icon: Network },
     { id: 'wireless', label: 'Wireless', icon: Wifi },
     { id: 'security', label: 'Security', icon: Shield },
+    { id: 'ai', label: 'AI / Integrations', icon: Brain },
 ];
 
 /* ─── Helper: get setting value with fallback ────────────── */
@@ -90,6 +91,8 @@ export default function SettingsPage() {
     const [saved, setSaved] = useState(false);
     const [activeSection, setActiveSection] = useState('snmp');
     const formRef = useRef<HTMLFormElement>(null);
+    const [aiTestResult, setAiTestResult] = useState<{ ok?: boolean; error?: string } | null>(null);
+    const [aiTesting, setAiTesting] = useState(false);
 
     useEffect(() => {
         if (!isAdmin) router.replace('/dashboard');
@@ -584,6 +587,60 @@ export default function SettingsPage() {
                             <Field label="Password Expiry (days)" hint="Force password change after N days (0 = never)">
                                 <input name="security.passwordExpiry" type="number" defaultValue={sv(settings, 'security.passwordExpiry', '0')} className={INPUT_CLS} />
                             </Field>
+                        </div>
+                    </Section>}
+
+                    {/* AI / Integrations */}
+                    {activeSection === 'ai' && <Section id="ai" icon={Brain} title="AI / Integrations" description="Configure AI-powered analytics and external integrations">
+                        <div className="space-y-6">
+                            <div className="pb-6 border-b border-gray-100">
+                                <h3 className="text-sm font-semibold flex items-center gap-2 mb-4">
+                                    <Brain className="h-4 w-4 text-purple-500" />
+                                    AI-Analytics
+                                    <span className="text-xs font-normal text-gray-400">— Powers AI Analytics & Reports</span>
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                    <div className="sm:col-span-2 space-y-1.5">
+                                        <label className="text-sm font-medium text-gray-700">Groq API Key</label>
+                                        <input name="ai.groqApiKey" type="password" defaultValue={sv(settings, 'ai.groqApiKey', '')} placeholder="gsk_..." className={INPUT_CLS} />
+                                        <p className="text-xs text-gray-400">Get your API key from <a href="https://console.groq.com" target="_blank" rel="noopener" className="text-blue-500 underline">console.groq.com</a></p>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-gray-700">AI Model</label>
+                                        <select name="ai.model" defaultValue={sv(settings, 'ai.model', 'llama-3.3-70b-versatile')} className={SELECT_CLS}>
+                                            <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
+                                            <option value="llama-3.1-8b-instant">Llama 3.1 8B (Fast)</option>
+                                            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <button type="button" onClick={async () => {
+                                        setAiTesting(true);
+                                        setAiTestResult(null);
+                                        try {
+                                            const { default: apiClient } = await import('@/lib/api-client').then(m => ({ default: m.api }));
+                                            const fd = formRef.current ? new FormData(formRef.current) : null;
+                                            const key = fd?.get('ai.groqApiKey') as string || '';
+                                            const { data } = await apiClient.post('/ai/test', { apiKey: key || undefined });
+                                            setAiTestResult(data);
+                                        } catch {
+                                            setAiTestResult({ ok: false, error: 'Connection failed' });
+                                        } finally {
+                                            setAiTesting(false);
+                                        }
+                                    }} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
+                                        {aiTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                                        Test Connection
+                                    </button>
+                                    {aiTestResult && (
+                                        <div className={`mt-2 flex items-center gap-2 text-sm ${aiTestResult.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+                                            {aiTestResult.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                                            {aiTestResult.ok ? 'Connected successfully!' : aiTestResult.error}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </Section>}
 

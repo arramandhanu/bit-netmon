@@ -1,15 +1,20 @@
 'use client';
 
-import { useState } from 'react';
-import { Eye, EyeOff, Lock, User, Monitor, Shield, Wifi } from 'lucide-react';
+import { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { Eye, EyeOff, Lock, User, Monitor, Shield, Wifi, CheckCircle2, UserPlus } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
 
-export default function LoginPage() {
+function LoginContent() {
     const [showPassword, setShowPassword] = useState(false);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const { login, loading, error } = useAuth();
+    const searchParams = useSearchParams();
+    const verified = searchParams.get('verified') === 'true';
+    const verifyError = searchParams.get('error');
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -116,6 +121,21 @@ export default function LoginPage() {
                             <p className="text-sm text-gray-500 mt-0.5">Enter your credentials to access the dashboard</p>
                         </div>
 
+                        {/* Verification success banner */}
+                        {verified && (
+                            <div className="mb-4 rounded-xl bg-emerald-50 border-2 border-emerald-200 px-4 py-3 text-sm text-emerald-700 font-medium flex items-center gap-2">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                                Email berhasil diverifikasi! Silakan login.
+                            </div>
+                        )}
+
+                        {/* Verify error banner */}
+                        {verifyError && (
+                            <div className="mb-4 rounded-xl bg-amber-50 border-2 border-amber-200 px-4 py-3 text-sm text-amber-700 font-medium">
+                                {decodeURIComponent(verifyError)}
+                            </div>
+                        )}
+
                         {/* Error message */}
                         {error && (
                             <div className="mb-4 rounded-xl bg-red-50 border-2 border-red-200 px-4 py-3 text-sm text-red-600 font-medium">
@@ -127,7 +147,7 @@ export default function LoginPage() {
                             {/* Username */}
                             <div className="space-y-2">
                                 <label htmlFor="username" className="text-sm font-semibold text-gray-700">
-                                    Username
+                                    Email / Username
                                 </label>
                                 <div className="relative">
                                     <User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -137,7 +157,7 @@ export default function LoginPage() {
                                         type="text"
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value)}
-                                        placeholder="Enter your username"
+                                        placeholder="Enter your email or username"
                                         required
                                         disabled={loading}
                                         className="h-12 w-full rounded-xl border-2 border-gray-200 bg-gray-50 pl-11 pr-4 text-sm outline-none transition-all placeholder:text-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:bg-white disabled:opacity-50"
@@ -195,8 +215,22 @@ export default function LoginPage() {
                     <p className="text-center text-xs text-gray-400 mt-6">
                         NetMon v0.1.0
                     </p>
+                    <p className="text-center text-sm text-gray-500 mt-3">
+                        Belum punya akun?{' '}
+                        <Link href="/register" className="text-blue-600 font-medium hover:underline inline-flex items-center gap-1">
+                            <UserPlus className="h-3.5 w-3.5" /> Daftar Gratis
+                        </Link>
+                    </p>
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginContent />
+        </Suspense>
     );
 }

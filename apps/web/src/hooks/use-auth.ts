@@ -11,6 +11,8 @@ export interface User {
     username: string;
     email: string;
     role: string;
+    tenantId?: number | null;
+    emailVerified?: boolean;
     isActive?: boolean;
     lastLoginAt?: string;
     createdAt?: string;

@@ -15,6 +15,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, RequirePermission } from '../../common/guards/roles.guard';
+import { CurrentUser, TenantUser } from '../../common/guards/tenant.guard';
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto, UpdateDeviceDto, DeviceQueryDto, BulkDeleteDeviceDto, BulkUpdateDeviceDto, TestSnmpDto } from './devices.dto';
 
@@ -28,22 +29,22 @@ export class DevicesController {
     @Get()
     @RequirePermission('devices:read')
     @ApiOperation({ summary: 'List all devices with pagination and filters' })
-    findAll(@Query() query: DeviceQueryDto) {
-        return this.devicesService.findAll(query);
+    findAll(@Query() query: DeviceQueryDto, @CurrentUser() user: TenantUser) {
+        return this.devicesService.findAll(query, user);
     }
 
     @Get(':id')
     @RequirePermission('devices:read')
     @ApiOperation({ summary: 'Get a single device by ID with its interfaces' })
-    findOne(@Param('id', ParseIntPipe) id: number) {
-        return this.devicesService.findOne(id);
+    findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: TenantUser) {
+        return this.devicesService.findOne(id, user);
     }
 
     @Post()
     @RequirePermission('devices:write')
     @ApiOperation({ summary: 'Create a new device' })
-    create(@Body() dto: CreateDeviceDto) {
-        return this.devicesService.create(dto);
+    create(@Body() dto: CreateDeviceDto, @CurrentUser() user: TenantUser) {
+        return this.devicesService.create(dto, user);
     }
 
     @Post('test-snmp')
@@ -57,15 +58,15 @@ export class DevicesController {
     @RequirePermission('devices:delete')
     @HttpCode(HttpStatus.OK)
     @ApiOperation({ summary: 'Bulk delete devices by IDs' })
-    bulkDelete(@Body() dto: BulkDeleteDeviceDto) {
-        return this.devicesService.bulkRemove(dto.ids);
+    bulkDelete(@Body() dto: BulkDeleteDeviceDto, @CurrentUser() user: TenantUser) {
+        return this.devicesService.bulkRemove(dto.ids, user);
     }
 
     @Patch('bulk-update')
     @RequirePermission('devices:write')
     @ApiOperation({ summary: 'Bulk update devices by IDs' })
-    bulkUpdate(@Body() dto: BulkUpdateDeviceDto) {
-        return this.devicesService.bulkUpdate(dto.ids, dto.data);
+    bulkUpdate(@Body() dto: BulkUpdateDeviceDto, @CurrentUser() user: TenantUser) {
+        return this.devicesService.bulkUpdate(dto.ids, dto.data, user);
     }
 
     @Patch(':id')
@@ -74,15 +75,16 @@ export class DevicesController {
     update(
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateDeviceDto,
+        @CurrentUser() user: TenantUser,
     ) {
-        return this.devicesService.update(id, dto);
+        return this.devicesService.update(id, dto, user);
     }
 
     @Delete(':id')
     @RequirePermission('devices:delete')
     @ApiOperation({ summary: 'Delete a device' })
-    remove(@Param('id', ParseIntPipe) id: number) {
-        return this.devicesService.remove(id);
+    remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: TenantUser) {
+        return this.devicesService.remove(id, user);
     }
 
     // ─── Maintenance Windows ────────────────────────────

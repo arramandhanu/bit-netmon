@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import {
     MapPin, Server, ArrowLeft, Pencil, Trash2, Map as MapIcon,
     CheckCircle2, AlertTriangle, XCircle, Wrench, ChevronRight,
-    Loader2, X,
+    Loader2, X, Globe, Monitor,
 } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { useToast } from '@/components/ui/toast';
@@ -28,8 +28,25 @@ interface DeviceRow {
     deviceType: string;
 }
 
+interface ServerMonitorRow {
+    id: number;
+    name: string;
+    status: string;
+    serverType: string;
+    ipAddress: string | null;
+}
+
+interface UrlMonitorRow {
+    id: number;
+    name: string;
+    status: string;
+    url: string;
+}
+
 interface LocationDetail extends Location {
     devices: DeviceRow[];
+    serverMonitors: ServerMonitorRow[];
+    urlMonitors: UrlMonitorRow[];
 }
 
 const statusConfig: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
@@ -172,8 +189,8 @@ function MiniMap({ lat, lng, name }: { lat: number; lng: number; name: string })
 
 /* ─── Page ───────────────────────────────────────────────── */
 
-export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params);
+export default function LocationDetailPage() {
+    const { id } = useParams();
     const router = useRouter();
     const { addToast } = useToast();
     const [location, setLocation] = useState<LocationDetail | null>(null);
@@ -216,8 +233,13 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
     if (error || !location) return <ErrorState message={error || 'Location not found'} onRetry={fetchLocation} />;
 
     const devices = location.devices || [];
+    const serverMonitors = location.serverMonitors || [];
+    const urlMonitors = location.urlMonitors || [];
+    const totalResources = devices.length + serverMonitors.length + urlMonitors.length;
     const statusCounts: Record<string, number> = {};
     devices.forEach(d => { statusCounts[d.status] = (statusCounts[d.status] || 0) + 1; });
+    serverMonitors.forEach(s => { statusCounts[s.status] = (statusCounts[s.status] || 0) + 1; });
+    urlMonitors.forEach(u => { statusCounts[u.status] = (statusCounts[u.status] || 0) + 1; });
 
     return (
         <div className="space-y-6">
@@ -250,8 +272,8 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
             {/* KPI Row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                 <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{devices.length}</p>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Devices</p>
+                    <p className="text-2xl font-bold text-gray-900">{totalResources}</p>
+                    <p className="text-xs text-gray-500 font-medium uppercase">Total</p>
                 </div>
                 {Object.entries(statusConfig).map(([status, cfg]) => {
                     const count = statusCounts[status] || 0;
@@ -306,54 +328,152 @@ export default function LocationDetailPage({ params }: { params: Promise<{ id: s
                     )}
                 </div>
 
-                {/* Right — Device table */}
-                <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                            <Server className="h-4 w-4 text-blue-600" />
-                            Devices at this Location ({devices.length})
-                        </h2>
+                {/* Right — Resource tables */}
+                <div className="lg:col-span-2 space-y-5">
+                    {/* SNMP Devices table */}
+                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                                <Server className="h-4 w-4 text-blue-600" />
+                                SNMP Devices ({devices.length})
+                            </h2>
+                        </div>
+                        {devices.length === 0 ? (
+                            <div className="py-10 text-center">
+                                <Server className="h-8 w-8 text-gray-200 mx-auto mb-2" />
+                                <p className="text-sm text-gray-500">No SNMP devices at this location</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-gray-100 text-xs text-gray-500 uppercase">
+                                            <th className="text-left px-5 py-3 font-semibold">Status</th>
+                                            <th className="text-left px-5 py-3 font-semibold">Hostname</th>
+                                            <th className="text-left px-5 py-3 font-semibold">IP Address</th>
+                                            <th className="text-left px-5 py-3 font-semibold">Type</th>
+                                            <th className="text-left px-5 py-3 font-semibold"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {devices.map(d => {
+                                            const sc = statusConfig[d.status] || statusConfig.unknown;
+                                            const Icon = sc.icon;
+                                            return (
+                                                <tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => router.push(`/devices/${d.id}`)}>
+                                                    <td className="px-5 py-3">
+                                                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${sc.bg} ${sc.color}`}>
+                                                            <Icon className="h-3 w-3" /> {d.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3 font-medium text-gray-900">{d.hostname}</td>
+                                                    <td className="px-5 py-3 font-mono text-gray-600">{d.ipAddress}</td>
+                                                    <td className="px-5 py-3 text-gray-500 capitalize">{d.deviceType.replace('_', ' ')}</td>
+                                                    <td className="px-5 py-3 text-gray-400"><ChevronRight className="h-4 w-4" /></td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
 
-                    {devices.length === 0 ? (
-                        <div className="py-16 text-center">
-                            <Server className="h-10 w-10 text-gray-200 mx-auto mb-2" />
-                            <p className="text-sm text-gray-500">No devices at this location yet</p>
+                    {/* Server Monitors table */}
+                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                                <Monitor className="h-4 w-4 text-purple-600" />
+                                Server Monitors ({serverMonitors.length})
+                            </h2>
                         </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-gray-100 text-xs text-gray-500 uppercase">
-                                        <th className="text-left px-5 py-3 font-semibold">Status</th>
-                                        <th className="text-left px-5 py-3 font-semibold">Hostname</th>
-                                        <th className="text-left px-5 py-3 font-semibold">IP Address</th>
-                                        <th className="text-left px-5 py-3 font-semibold">Type</th>
-                                        <th className="text-left px-5 py-3 font-semibold"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {devices.map(d => {
-                                        const sc = statusConfig[d.status] || statusConfig.unknown;
-                                        const Icon = sc.icon;
-                                        return (
-                                            <tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => router.push(`/devices/${d.id}`)}>
-                                                <td className="px-5 py-3">
-                                                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${sc.bg} ${sc.color}`}>
-                                                        <Icon className="h-3 w-3" /> {d.status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-5 py-3 font-medium text-gray-900">{d.hostname}</td>
-                                                <td className="px-5 py-3 font-mono text-gray-600">{d.ipAddress}</td>
-                                                <td className="px-5 py-3 text-gray-500 capitalize">{d.deviceType.replace('_', ' ')}</td>
-                                                <td className="px-5 py-3 text-gray-400"><ChevronRight className="h-4 w-4" /></td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                        {serverMonitors.length === 0 ? (
+                            <div className="py-10 text-center">
+                                <Monitor className="h-8 w-8 text-gray-200 mx-auto mb-2" />
+                                <p className="text-sm text-gray-500">No server monitors at this location</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-gray-100 text-xs text-gray-500 uppercase">
+                                            <th className="text-left px-5 py-3 font-semibold">Status</th>
+                                            <th className="text-left px-5 py-3 font-semibold">Name</th>
+                                            <th className="text-left px-5 py-3 font-semibold">IP Address</th>
+                                            <th className="text-left px-5 py-3 font-semibold">Type</th>
+                                            <th className="text-left px-5 py-3 font-semibold"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {serverMonitors.map(s => {
+                                            const sc = statusConfig[s.status] || statusConfig.unknown;
+                                            const Icon = sc.icon;
+                                            return (
+                                                <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => router.push(`/server-monitor/${s.id}`)}>
+                                                    <td className="px-5 py-3">
+                                                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${sc.bg} ${sc.color}`}>
+                                                            <Icon className="h-3 w-3" /> {s.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3 font-medium text-gray-900">{s.name}</td>
+                                                    <td className="px-5 py-3 font-mono text-gray-600">{s.ipAddress || '—'}</td>
+                                                    <td className="px-5 py-3 text-gray-500 capitalize">{s.serverType}</td>
+                                                    <td className="px-5 py-3 text-gray-400"><ChevronRight className="h-4 w-4" /></td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* URL Monitors table */}
+                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                                <Globe className="h-4 w-4 text-green-600" />
+                                URL Monitors ({urlMonitors.length})
+                            </h2>
                         </div>
-                    )}
+                        {urlMonitors.length === 0 ? (
+                            <div className="py-10 text-center">
+                                <Globe className="h-8 w-8 text-gray-200 mx-auto mb-2" />
+                                <p className="text-sm text-gray-500">No URL monitors at this location</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-gray-100 text-xs text-gray-500 uppercase">
+                                            <th className="text-left px-5 py-3 font-semibold">Status</th>
+                                            <th className="text-left px-5 py-3 font-semibold">Name</th>
+                                            <th className="text-left px-5 py-3 font-semibold">URL</th>
+                                            <th className="text-left px-5 py-3 font-semibold"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {urlMonitors.map(u => {
+                                            const sc = statusConfig[u.status] || statusConfig.unknown;
+                                            const Icon = sc.icon;
+                                            return (
+                                                <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                                                    <td className="px-5 py-3">
+                                                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${sc.bg} ${sc.color}`}>
+                                                            <Icon className="h-3 w-3" /> {u.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3 font-medium text-gray-900">{u.name}</td>
+                                                    <td className="px-5 py-3 font-mono text-gray-600 text-xs truncate max-w-[200px]">{u.url}</td>
+                                                    <td className="px-5 py-3 text-gray-400"><ChevronRight className="h-4 w-4" /></td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
